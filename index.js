@@ -7,7 +7,6 @@ const app = express();
 const port = process.env.PORT || 3000; // Usa porta dinâmica para o Render
 app.listen(port, () => console.log(`Servidor rodando na porta ${port}`));
 
-const cors = require('cors');
 app.use(cors({ origin: '*' })); // Libera acesso de qualquer frontend
 
 app.use(express.json());
