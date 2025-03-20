@@ -378,7 +378,3 @@ app.delete('/pokemons/:id', (req, res) => {
     });
 });
 
-// Inicia o servidor na porta especificada
-app.listen(port, () => {
-    console.log(`API rodando em http://localhost:${port}`);
-});
