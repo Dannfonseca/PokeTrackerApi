@@ -1,0 +1,251 @@
+/* TODOLISTPOKEMON/css/clan.css */
+/*
+Estilos específicos para a seção de visualização de um Clã.
+Inclui estilos para o cabeçalho do clã (título, tag de elementos, botão voltar),
+ações (botão "Adicionar Tudo"), a lista de seleção de Pokémons (itens,
+botões de selecionar/deletar, estado de indisponível), o campo de input
+para o nome do treinador e o botão de confirmação, e a mensagem exibida
+quando um clã não tem Pokémons.
+*/
+
+.clan-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border-light);
+}
+.clan-info h2 {
+    font-size: 1.85rem;
+    font-weight: 700;
+    color: var(--text-dark);
+    text-transform: capitalize;
+    margin-bottom: 0.35rem;
+    line-height: 1.2;
+}
+.clan-elements-tag {
+    display: inline-block;
+    padding: 0.3rem 0.8rem;
+    border-radius: var(--radius-full);
+    font-size: 0.8rem;
+    font-weight: 500;
+
+    border: 1px solid currentColor;
+}
+.clan-header .back-button {
+    padding: 0.6rem 1.2rem;
+    font-size: 0.85rem;
+    margin-top: 0.25rem;
+}
+
+
+.clan-actions {
+    margin-bottom: 2rem;
+    display: flex;
+    gap: 1rem;
+}
+#selectEntireBag {
+    padding: 0.8rem 1.8rem;
+    font-size: 0.95rem;
+}
+#selectEntireBag.remove-all {
+    background-color: var(--warning-color);
+    color: var(--text-white);
+}
+#selectEntireBag.remove-all:hover:not(:disabled) {
+    background-color: #b45309;
+}
+
+
+.pokemon-selection {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+    margin-bottom: 2rem;
+}
+.pokemon-item {
+    background-color: var(--bg-white);
+    border-radius: var(--radius);
+    padding: 1rem 1.25rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: var(--shadow-sm);
+    transition: all var(--transition);
+    border: 1px solid var(--border-light);
+    border-left: 5px solid transparent;
+}
+.pokemon-item:hover {
+    box-shadow: var(--shadow);
+    transform: scale(1.02);
+    border-left-color: var(--border-medium);
+}
+.pokemon-item.selected {
+    background-color: #e9efff;
+    border-color: var(--primary-light);
+    border-left-color: var(--primary-color);
+    box-shadow: var(--shadow);
+}
+.pokemon-item.unavailable {
+    background-color: var(--bg-gray);
+    border-color: var(--border-light);
+    border-left-color: var(--danger-color);
+    opacity: 0.7;
+    cursor: not-allowed;
+    transform: none !important;
+    box-shadow: none;
+}
+.pokemon-item.unavailable .pokemon-name {
+    text-decoration: none;
+    color: var(--text-light);
+}
+.pokemon-item.unavailable .select-button {
+     background-color: transparent;
+     border: 2px solid var(--danger-color);
+     color: var(--danger-color);
+     cursor: not-allowed;
+     opacity: 0.8;
+}
+
+.pokemon-name {
+    font-weight: 500;
+    color: var(--text-dark);
+    flex-grow: 1;
+    margin-right: 1rem;
+    font-size: 1rem;
+}
+.pokemon-status {
+    font-size: 0.8rem;
+    color: var(--text-light);
+    margin-left: 0.5rem;
+    white-space: nowrap;
+}
+.pokemon-actions {
+    display: flex;
+    gap: 0.65rem;
+    align-items: center;
+}
+
+
+.select-button {
+    background-color: var(--bg-white);
+    color: var(--primary-color);
+    border: 1px solid var(--border-medium);
+    border-radius: var(--radius-sm);
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    line-height: 1;
+    padding: 0;
+}
+.select-button:hover:not(:disabled) {
+    background-color: var(--bg-light);
+    border-color: var(--primary-color);
+    color: var(--primary-dark);
+    transform: scale(1.05);
+}
+.select-button.selected {
+    background-color: var(--primary-color);
+    color: var(--text-white);
+    border-color: var(--primary-color);
+    transform: scale(1);
+}
+.select-button.selected:hover:not(:disabled) {
+    background-color: var(--primary-dark);
+    border-color: var(--primary-dark);
+     transform: scale(1.05);
+}
+
+
+.pokemon-actions .delete-button {
+    background-color: var(--bg-white);
+    color: var(--danger-color);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    line-height: 1;
+    padding: 0;
+}
+.pokemon-actions .delete-button:hover {
+    background-color: var(--danger-color);
+    color: var(--text-white);
+    border-color: var(--danger-color);
+    transform: scale(1.05);
+}
+
+
+.trainer-input {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+    padding: 1.5rem;
+    background-color: var(--bg-gray);
+    border-radius: var(--radius);
+    border: 1px solid var(--border-light);
+}
+.trainer-input input {
+    flex: 1 1 250px;
+}
+.trainer-input .confirm-button {
+    flex-shrink: 0;
+    padding: 0.65rem 2rem;
+    font-size: 1rem;
+}
+
+
+.empty-clan {
+    background-color: var(--bg-light);
+    border-radius: var(--radius);
+    padding: 4rem 2rem;
+    text-align: center;
+    box-shadow: none;
+    border: 1px dashed var(--border-medium);
+    margin-top: 1rem;
+}
+.empty-clan svg {
+    color: var(--text-light);
+    width: 56px;
+    height: 56px;
+    margin-bottom: 1.5rem;
+    opacity: 0.4;
+}
+.empty-clan h3 {
+    font-size: 1.3rem;
+    font-weight: 500;
+    margin-bottom: 0.75rem;
+    color: var(--text-medium);
+}
+.empty-clan p {
+    color: var(--text-light);
+    font-size: 0.95rem;
+}
+
+
+@media (min-width: 768px) {
+    .pokemon-selection {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+@media (min-width: 1100px) {
+    .pokemon-selection {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}

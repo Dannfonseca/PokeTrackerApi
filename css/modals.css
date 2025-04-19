@@ -1,0 +1,304 @@
+/* TODOLISTPOKEMON/css/modals.css */
+/*
+Define os estilos para os diferentes modais da aplicação.
+Inclui estilos base para o overlay, container, cabeçalho, corpo e rodapé.
+Estiliza elementos específicos como formulários, listas e filtros.
+Adicionados estilos para o modal de Gerenciamento de Treinadores.
+*/
+
+
+/* --- Estilos Base do Modal --- */
+.modal {
+    display: none; /* Começa escondido */
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1000; /* Garante que fique acima de outros conteúdos */
+    justify-content: center;
+    align-items: center;
+    padding: 1rem; /* Espaçamento nas bordas */
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+}
+
+.modal-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(31, 41, 55, 0.6); /* Fundo escuro semi-transparente */
+    cursor: pointer; /* Indica que pode fechar clicando fora */
+    animation: fadeIn 0.3s ease-out forwards; /* Animação de entrada */
+}
+
+.modal-content {
+    background-color: var(--bg-white);
+    border-radius: var(--radius);
+    width: 100%;
+    max-width: 550px; /* Largura padrão do modal */
+    max-height: 85vh; /* Altura máxima */
+    overflow: hidden; /* Esconde conteúdo que transborda */
+    display: flex;
+    flex-direction: column; /* Organiza header, body, footer verticalmente */
+    box-shadow: var(--shadow-lg);
+    z-index: 1; /* Acima do overlay */
+    position: relative;
+    transform: scale(0.95); /* Efeito de zoom inicial */
+    opacity: 0;
+    animation: zoomIn 0.3s 0.1s ease-out forwards; /* Animação de entrada */
+}
+
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes zoomIn {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+
+.modal-header {
+    padding: 1.25rem 1.75rem;
+    border-bottom: 1px solid var(--border-light);
+    display: flex;
+    justify-content: space-between; /* Espaça título e botões */
+    align-items: center;
+    flex-shrink: 0; /* Evita que o header encolha */
+    gap: 1rem; /* Espaço entre título e botões se houver mais de um */
+}
+.modal-header h2 {
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: var(--text-dark);
+    margin: 0; /* Remove margem padrão do h2 */
+    flex-grow: 1; /* Título ocupa espaço */
+}
+/* Botão de fechar genérico no header */
+.modal-header .close-button {
+    color: var(--text-light);
+    padding: 0.25rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    line-height: 1;
+    border-radius: 50%;
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+    flex-shrink: 0; /* Não encolhe */
+}
+.modal-header .close-button:hover {
+    background-color: var(--bg-gray);
+    color: var(--text-dark);
+}
+.modal-header .close-button svg {
+    display: block;
+}
+
+/* Botão de ícone específico no header (ex: adicionar treinador) */
+.modal-header .icon-button {
+    background: none;
+    border: none;
+    padding: 0.4rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+    line-height: 1;
+    flex-shrink: 0; /* Não encolhe */
+}
+.modal-header .icon-button svg {
+     display: block;
+}
+
+
+.modal-body {
+    padding: 1.75rem;
+    overflow-y: auto; /* Adiciona scroll se necessário */
+    flex: 1; /* Faz o corpo ocupar o espaço restante */
+    background-color: var(--bg-light); /* Fundo levemente diferente */
+}
+
+.modal-footer {
+    padding: 1.25rem 1.75rem;
+    border-top: 1px solid var(--border-light);
+    display: flex;
+    justify-content: flex-end; /* Alinha botões à direita */
+    gap: 0.75rem;
+    flex-shrink: 0; /* Evita que o footer encolha */
+    background-color: var(--bg-white);
+}
+.modal-footer .button {
+    padding: 0.6rem 1.4rem;
+    font-size: 0.9rem;
+}
+
+/* --- Estilos Específicos dos Modais (Adicionar, Devolver, Histórico - mantidos) --- */
+
+/* Modal Adicionar Pokémon */
+#addPokemonModal .modal-content { max-width: 480px; }
+#addPokemonModal .modal-body { background-color: var(--bg-white); }
+#addPokemonModal .form-group { margin-bottom: 1.25rem; }
+#addPokemonModal .form-actions { border-top: none; padding-top: 0; margin-top: 1.5rem; }
+
+/* Modal Adicionar Treinador (Formulário) */
+#addTrainerModal .modal-content { max-width: 480px; }
+#addTrainerModal .modal-body { background-color: var(--bg-white); }
+#addTrainerModal .form-group { margin-bottom: 1.25rem; }
+#addTrainerModal #adminPasswordForTrainer { border-left: 3px solid var(--warning-color); }
+#addTrainerModal .form-actions { border-top: none; padding-top: 0; margin-top: 1.5rem; }
+
+/* Modal Devolução Parcial */
+#partialReturnModal .modal-content { max-width: 480px; }
+#partialReturnModal p { margin-bottom: 1rem; font-size: 1rem; color: var(--text-medium); }
+.partial-return-list { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.5rem; }
+.partial-return-item { display: flex; justify-content: space-between; align-items: center; padding: 0.8rem 1rem; background-color: var(--bg-white); border-radius: var(--radius-sm); border: 1px solid var(--border-light); transition: all var(--transition-fast); cursor: pointer; }
+.partial-return-item:hover { border-color: var(--primary-light); background-color: #f8fafc; }
+.partial-return-item.selected { background-color: #eef4ff; border-color: var(--primary-color); }
+.partial-return-item .pokemon-name { font-weight: 500; margin-right: 1rem; color: var(--text-dark); }
+.partial-return-checkbox { width: 18px; height: 18px; cursor: pointer; flex-shrink: 0; accent-color: var(--primary-color); }
+/* Campo de senha adicionado */
+#partialReturnModal .form-group label { font-size: 0.9rem; }
+#partialReturnModal .form-group input[type="password"] { font-size: 0.95rem; padding: 0.6rem 0.8rem; }
+
+/* Modal Histórico */
+#historyModal .modal-content { max-width: 750px; }
+.history-filters { display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; padding-bottom: 1rem; border-bottom: 1px solid var(--border-light); }
+.history-search { flex: 1 1 250px; font-size: 0.9rem; }
+.history-filter { padding: 0.65rem 1rem; font-size: 0.9rem; flex-shrink: 0; }
+#historyModal .delete-all-button { margin-left: auto; padding: 0.6rem 1.2rem; font-size: 0.85rem; }
+.history-list { display: flex; flex-direction: column; gap: 1.25rem; max-height: 60vh; overflow-y: auto; padding-right: 0.5rem; } /* Scroll adicionado */
+.history-item { background-color: var(--bg-white); border-radius: var(--radius-sm); padding: 1.25rem 1.5rem; border: 1px solid var(--border-light); border-left: 5px solid var(--border-medium); box-shadow: none; transition: box-shadow var(--transition); }
+.history-item:hover { box-shadow: var(--shadow-sm); }
+.history-item.returned { border-left-color: var(--success-color); }
+.history-item.active { border-left-color: var(--warning-color); }
+.history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem; flex-wrap: wrap; gap: 0.75rem; }
+.history-trainer { font-weight: 600; color: var(--text-dark); font-size: 1.05rem; flex-grow: 1; }
+.history-date { font-size: 0.8rem; color: var(--text-light); white-space: nowrap; }
+.history-header .delete-button { padding: 0.4rem 0.9rem; font-size: 0.8rem; }
+.history-pokemons { font-size: 0.95rem; line-height: 1.6; color: var(--text-medium); }
+.history-pokemons > div { margin-bottom: 0.6rem; padding-left: 0.5rem; border-left: 2px solid var(--border-light); word-wrap: break-word; }
+.history-pokemons > div:last-child { margin-bottom: 0; }
+.history-status { font-size: 0.75rem; font-weight: 500; padding: 0.2rem 0.6rem; border-radius: var(--radius-sm); display: inline-block; margin-right: 0.6rem; text-transform: uppercase; vertical-align: baseline; border: 1px solid transparent; }
+.history-status.returned { background-color: #e7f8f0; color: #118d57; border-color: #a6e9c9; }
+.history-status.active { background-color: #fffbeb; color: #b45309; border-color: #fde68a; }
+.history-return-date { font-size: 0.8rem; color: var(--text-light); margin-top: 0.2rem; display: block; padding-left: 0; }
+.history-return-date::before { content: '↪'; margin-right: 0.4rem; display: inline-block; opacity: 0.7; }
+.pokemon-clan-tag { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; border: 1px solid rgba(0, 0, 0, 0.1); }
+.history-pokemons span.history-status { margin-right: 4px; }
+.history-pokemons span.pokemon-clan-tag { margin-left: 2px; }
+#historyModal .modal-footer { justify-content: flex-end; }
+
+
+/* --- Estilos para Modal Gerenciar Treinadores --- */
+#manageTrainersModal .modal-content {
+    max-width: 520px; /* Um pouco mais largo para a lista */
+}
+
+/* Botão de adicionar no header do modal */
+.add-new-trainer-button {
+    /* Herda .icon-button */
+    color: var(--primary-color); /* Cor primária para o ícone */
+    margin-left: auto; /* Empurra para a direita do título */
+}
+.add-new-trainer-button:hover {
+    background-color: var(--primary-light);
+    color: var(--text-white);
+}
+
+/* Estilo da lista de treinadores */
+.trainer-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem; /* Espaço entre itens */
+    /* Ajusta altura máxima para ocupar espaço disponível no modal body */
+    max-height: calc(85vh - 180px); /* Exemplo: altura da viewport menos header/footer/padding/texto */
+    min-height: 100px; /* Altura mínima */
+    overflow-y: auto; /* Scroll se necessário */
+    padding: 0.25rem 0.5rem 0.25rem 0.25rem; /* Padding interno, mais à direita p/ scrollbar */
+    margin-top: 0.5rem;
+    background-color: var(--bg-white); /* Fundo branco para a lista se o body for cinza */
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-light);
+}
+
+.trainer-list-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.8rem 1rem; /* Padding interno do item */
+    background-color: transparent; /* Item transparente sobre fundo da lista */
+    border-bottom: 1px solid var(--border-light); /* Linha separadora */
+    transition: background-color var(--transition-fast);
+}
+.trainer-list-item:last-child {
+    border-bottom: none; /* Remove borda do último item */
+}
+.trainer-list-item:hover {
+    background-color: var(--bg-light); /* Destaque leve no hover */
+}
+
+.trainer-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    flex-grow: 1; /* Ocupa espaço disponível */
+    margin-right: 1rem; /* Espaço antes do botão delete */
+    overflow: hidden; /* Evita que texto longo vaze */
+}
+
+.trainer-name {
+    font-weight: 500;
+    color: var(--text-dark);
+    font-size: 0.95rem; /* Pouco menor */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis; /* Adiciona '...' se nome for muito longo */
+}
+
+.trainer-email {
+    font-size: 0.8rem; /* Pouco menor */
+    color: var(--text-light);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis; /* Adiciona '...' se email for muito longo */
+}
+
+/* Botão de deletar pequeno (-) */
+.trainer-list-item .small-delete-button {
+    /* Herda .delete-button mas com ajustes */
+    background-color: transparent;
+    color: var(--danger-color);
+    border: 1px solid transparent;
+    border-radius: 50%; /* Círculo */
+    width: 30px;
+    height: 30px;
+    padding: 0; /* Remove padding padrão do botão */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0; /* Não encolhe */
+    transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
+    box-shadow: none; /* Remove sombra padrão */
+    transform: none; /* Remove translateY padrão */
+}
+.trainer-list-item .small-delete-button:hover {
+    background-color: #fee2e2; /* Fundo vermelho claro no hover */
+    border-color: #fca5a5; /* Borda vermelha clara */
+    color: #b91c1c; /* Vermelho mais escuro */
+    transform: none; /* Garante que não levante */
+    box-shadow: none;
+}
+.trainer-list-item .small-delete-button svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* Mensagem se a lista estiver vazia */
+.trainer-list:empty::after {
+    content: 'Nenhum treinador cadastrado.';
+    display: block;
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-light);
+    font-style: italic;
+}

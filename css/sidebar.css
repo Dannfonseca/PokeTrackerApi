@@ -1,0 +1,154 @@
+/* TODOLISTPOKEMON/css/sidebar.css */
+/*
+Estilos para a barra lateral (sidebar) que funciona como menu de navegação
+entre os clãs e a home. Define seu posicionamento (fixo), aparência,
+transição para exibição em mobile, e estilos para os botões de clã,
+incluindo os estados hover e ativo (com cores específicas do clã).
+Também inclui estilos para o overlay escuro que aparece em mobile.
+*/
+
+
+.sidebar {
+    position: fixed;
+    top: 0;
+    left: -260px;
+    width: 250px;
+    height: 100%;
+    background-color: var(--bg-white);
+    border-right: 1px solid var(--border-light);
+    box-shadow: 3px 0px 15px rgba(0,0,0,0.05);
+    z-index: 1000;
+    transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow-y: auto;
+    padding-top: 60px;
+}
+
+
+.menu-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 999;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease, visibility 0s 0.3s linear;
+}
+.menu-overlay.active {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 0.3s ease;
+}
+
+
+.sidebar.active {
+    left: 0;
+}
+
+
+.sidebar-header {
+    padding: 0 1.5rem;
+    border-bottom: 1px solid var(--border-light);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    background-color: var(--bg-white);
+    z-index: 1;
+}
+.sidebar-header h2 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--primary-color);
+}
+
+
+.sidebar-header .close-button {
+    color: var(--text-medium);
+}
+.sidebar-header .close-button:hover {
+    background-color: var(--bg-gray);
+    color: var(--text-dark);
+}
+
+
+.sidebar-nav {
+    padding: 1rem 0;
+}
+
+.sidebar-nav ul {
+    list-style: none;
+}
+
+.clan-button {
+    width: 100%;
+    text-align: left;
+    padding: 0.8rem 1.5rem;
+    background: transparent;
+    border: none;
+    border-left: 4px solid transparent;
+    font-size: 0.95rem;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    transition: background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+    position: relative;
+    color: var(--text-medium);
+    font-weight: 400;
+}
+
+.clan-button .clan-elements {
+    font-size: 0.75rem;
+    color: var(--text-light);
+    margin-top: 0.1rem;
+    font-weight: 400;
+    opacity: 0.9;
+}
+
+
+.clan-button:hover {
+    background-color: var(--bg-light);
+    color: var(--hover-color, var(--text-dark));
+}
+
+
+.clan-button.active {
+    background-color: #e9efff;
+    font-weight: 600;
+    color: var(--primary-color);
+    border-left-color: var(--primary-color);
+
+}
+.clan-button.active .clan-elements {
+    color: inherit;
+    opacity: 0.8;
+}
+
+.clan-button.active[style*="color"] {
+     background-color: var(--bg-light);
+}
+
+
+
+@media (min-width: 768px) {
+    .sidebar {
+        left: 0;
+        box-shadow: none;
+        padding-top: 1rem;
+    }
+    .sidebar-header {
+        display: none;
+    }
+    .close-button {
+        display: none;
+    }
+    .menu-overlay {
+        display: none !important;
+    }
+}
