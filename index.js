@@ -1,15 +1,16 @@
 // TODOLISTPOKEMON/poke-api/index.js
 /**
  * Servidor backend Express para a API Pokes da House.
- * Define endpoints RESTful para gerenciar Pokémons, clãs, empréstimos (histórico),
+ * Define endpoints RESTful para gerenciar Pokémons, clãs, treinadores e empréstimos (histórico),
  * interagindo com o banco de dados SQLite (configurado em database.js).
  *
  * Principais Endpoints:
+ * - POST /trainers : (Admin) Adiciona um novo treinador.
  * - GET /pokemons/:id : Busca um Pokémon por ID.
- * - POST /history : Registra um novo empréstimo de Pokémons para um treinador.
+ * - POST /history : Registra um novo empréstimo de Pokémons validando a senha do treinador.
  * - GET /clans/:clan/pokemons : Lista Pokémons de um clã específico.
- * - GET /history : Retorna todo o histórico de empréstimos.
- * - GET /history/active : Retorna os empréstimos ativos, agrupados por treinador/data.
+ * - GET /history : Retorna todo o histórico de empréstimos (com nome do treinador).
+ * - GET /history/active : Retorna os empréstimos ativos (com nome do treinador), agrupados por treinador/data.
  * - PUT /history/:id/return : Marca uma entrada de histórico como devolvida e atualiza o status do Pokémon.
  * - POST /clans/:clan/pokemons : Adiciona um novo Pokémon a um clã.
  * - DELETE /history/:id : Deleta uma entrada específica do histórico.
@@ -17,19 +18,63 @@
  * - DELETE /pokemons/:id : Deleta um Pokémon (e sua associação com clãs).
  */
 
+import express from 'express'; // Mudar para import default
+import cors from 'cors';      // Mudar para import default
+import { db, uuidv4 } from './database.js'; // Mudar para import e adicionar .js
 
-const express = require('express');
-const cors = require('cors');
-
-const { db, } = require('./database');
-const { v4: uuidv4 } = require('uuid');
+// DEFINIR SENHA ADMIN AQUI (ou via variável de ambiente)
+// ATENÇÃO: Esta senha é usada para operações sensíveis como adicionar treinador e deletar pokémon/histórico.
+// Mantenha-a segura. Em um cenário real, use variáveis de ambiente.
+const ADMIN_PASSWORD = 'raito123'; // Use a mesma senha definida no config.js original
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(cors({ origin: '*' }));
+app.use(cors({ origin: '*' })); // Permite acesso local do frontend
 app.use(express.json());
 
+// --- Endpoints de Treinadores ---
+
+// Endpoint para adicionar treinador (requer senha de admin)
+app.post('/trainers', (req, res) => {
+    const { name, email, password, admin_password } = req.body; // admin_password vem da requisição frontend
+
+    console.log(`[POST /trainers] Recebida requisição para adicionar treinador: ${name} (${email})`);
+
+    // Compara a senha fornecida na requisição com a senha definida no backend
+    if (admin_password !== ADMIN_PASSWORD) {
+        console.warn(`[POST /trainers] Tentativa de adicionar treinador com senha de admin inválida.`);
+        return res.status(403).json({ error: 'Senha de administrador incorreta.' });
+    }
+
+    if (!name || !email || !password) {
+        return res.status(400).json({ error: 'Nome, email e senha do treinador são obrigatórios.' });
+    }
+    // Simplificando: Validação básica de email
+    if (!/\S+@\S+\.\S+/.test(email)) {
+         return res.status(400).json({ error: 'Formato de email inválido.' });
+    }
+
+    const trainerId = uuidv4();
+    // IMPORTANTE: Armazenar senhas em texto plano é INSEGURO.
+    // Em produção, use hashing (ex: bcrypt). Aqui seguimos a especificação.
+    const insertQuery = `INSERT INTO trainers (id, name, email, password) VALUES (?, ?, ?, ?)`;
+     db.run(insertQuery, [trainerId, name.trim(), email.trim().toLowerCase(), password], function (err) {
+        if (err) {
+            if (err.message.includes('UNIQUE constraint failed: trainers.email')) {
+                 console.warn(`[POST /trainers] Email já cadastrado: ${email}`);
+                return res.status(409).json({ error: 'Email já cadastrado.' });
+            }
+            console.error(`[POST /trainers] Erro DB ao inserir ${name}:`, err.message);
+            return res.status(500).json({ error: 'Erro interno ao cadastrar treinador.' });
+        }
+        console.log(`[POST /trainers] Treinador ${name} adicionado com ID ${trainerId}.`);
+        res.status(201).json({ message: `Treinador ${name} adicionado com sucesso!`, trainerId: trainerId });
+    });
+});
+
+
+// --- Endpoints de Pokémon e Clãs ---
 
 app.get('/pokemons/:id', (req, res) => {
     const { id } = req.params;
@@ -44,116 +89,6 @@ app.get('/pokemons/:id', (req, res) => {
         res.status(200).json(row);
     });
 });
-
-
-app.post('/history', (req, res) => {
-    const { pokemons, trainer } = req.body;
-    const dateISO = new Date().toISOString();
-
-
-    if (!pokemons || !Array.isArray(pokemons) || pokemons.length === 0) {
-        return res.status(400).json({ error: 'Lista de Pokémons inválida ou vazia.' });
-    }
-    if (!trainer || typeof trainer !== 'string' || trainer.trim() === '') {
-        return res.status(400).json({ error: 'Nome do treinador inválido ou vazio.' });
-    }
-
-    console.log(`[POST /history] Recebido pedido de ${trainer} para ${pokemons.join(', ')} em ${dateISO}`);
-
-    db.serialize(() => {
-        db.run('BEGIN TRANSACTION', (beginErr) => {
-            if(beginErr){
-                console.error(`[POST /history] Erro ao iniciar transação:`, beginErr.message);
-                return res.status(500).json({ error: 'Erro interno ao iniciar registro.' });
-            }
-            console.log(`[POST /history] Transação iniciada para ${trainer}.`);
-
-
-            const validationPromises = pokemons.map(pokemonId => {
-                return new Promise((resolve, reject) => {
-
-                    if (typeof pokemonId !== 'string' || pokemonId.length < 10) {
-                        return reject(new Error(`ID de Pokémon inválido: ${pokemonId}`));
-                    }
-                    db.get('SELECT name, status FROM pokemon WHERE id = ?', [pokemonId], (err, row) => {
-                        if (err) return reject(err);
-                        if (!row) return reject(new Error(`Pokémon com ID ${pokemonId} não encontrado no banco.`));
-                        resolve({ id: pokemonId, name: row.name, status: row.status });
-                    });
-                });
-            });
-
-            Promise.all(validationPromises)
-                .then(pokemonData => {
-                    console.log(`[POST /history] Dados dos pokémons validados:`, pokemonData.map(p=>({id:p.id, name:p.name, status:p.status})));
-
-                    const unavailablePokemons = pokemonData.filter(p => p.status !== 'available');
-                    if (unavailablePokemons.length > 0) {
-                        const names = unavailablePokemons.map(p => p.name || p.id).join(', ');
-
-                        throw new Error(`Pokémon(s) não disponível(is): ${names}. Status atual: ${unavailablePokemons.map(p=>p.status).join(',')}`);
-                    }
-
-
-                    const updatePromises = pokemonData.map(({ id }) => {
-                        return new Promise((resolve, reject) => {
-                            db.run('UPDATE pokemon SET status = "borrowed" WHERE id = ? AND status = "available"', [id], function (err) {
-                                if (err) return reject(err);
-
-                                if (this.changes === 0) return reject(new Error(`Pokémon ${id} não pôde ser marcado como emprestado (status pode ter mudado).`));
-                                console.log(`[POST /history] Status do Pokémon ${id} atualizado para 'borrowed'.`);
-                                resolve();
-                            });
-                        });
-                    });
-
-                    return Promise.all(updatePromises).then(() => pokemonData);
-                })
-                .then((pokemonData) => {
-                    console.log(`[POST /history] Inserindo ${pokemonData.length} registro(s) no histórico...`);
-
-                    const historyPromises = pokemonData.map(({ id, name }) => {
-                        return new Promise((resolve, reject) => {
-                            db.run('INSERT INTO history (pokemon, pokemon_name, trainer, date) VALUES (?, ?, ?, ?)',
-                                [id, name, trainer, dateISO], function (err) {
-                                if (err) return reject(err);
-                                console.log(`[POST /history] Registro ID ${this.lastID} inserido para Pokémon ${id}.`);
-                                resolve(this.lastID);
-                            });
-                        });
-                    });
-                    return Promise.all(historyPromises);
-                })
-                .then((insertedIds) => {
-                    console.log(`[POST /history] Registros inseridos com IDs: ${insertedIds.join(', ')}. Commitando transação.`);
-
-                    db.run('COMMIT', (commitErr) => {
-                         if(commitErr){
-                            console.error(`[POST /history] Erro ao commitar transação:`, commitErr.message);
-
-                            db.run('ROLLBACK');
-                            return res.status(500).json({ error: 'Erro interno ao finalizar registro.' });
-                         }
-                         console.log(`[POST /history] Transação commitada com sucesso para ${trainer}.`);
-                         res.status(201).json({ message: 'Pokémons registrados com sucesso!' });
-                    });
-                })
-                .catch(err => {
-
-                    console.error(`[POST /history] Erro durante o processo para ${trainer}: ${err.message}`);
-                    db.run('ROLLBACK', (rollbackErr) => {
-                         if(rollbackErr) console.error(`[POST /history] Erro ao executar ROLLBACK:`, rollbackErr.message);
-                         else console.log(`[POST /history] Transação revertida (ROLLBACK) para ${trainer}.`);
-                    });
-
-                    const statusCode = err.message.includes('disponível') || err.message.includes('emprestado') || err.message.includes('encontrado') || err.message.includes('inválido') ? 400 : 500;
-                    res.status(statusCode).json({ error: err.message });
-                });
-        });
-    });
-});
-
-
 
 app.get('/clans/:clan/pokemons', (req, res) => {
     const { clan } = req.params;
@@ -175,163 +110,6 @@ app.get('/clans/:clan/pokemons', (req, res) => {
         res.status(200).json(rows);
     });
 });
-
-
-app.get('/history', (req, res) => {
-    console.log("[GET /history] Buscando histórico completo...");
-    const query = `
-        SELECT
-            h.id, h.pokemon, p.name AS pokemon_name,
-            h.trainer, h.date, h.returned, h.returnDate,
-            c.name AS clan_name
-        FROM history h
-        LEFT JOIN pokemon p ON h.pokemon = p.id
-        LEFT JOIN clan_pokemon cp ON p.id = cp.pokemon_id
-        LEFT JOIN clan c ON cp.clan_id = c.id
-        ORDER BY h.date DESC, c.name COLLATE NOCASE, p.name COLLATE NOCASE
-    `;
-    db.all(query, [], (err, rows) => {
-        if (err) {
-            console.error("[GET /history] Erro DB:", err.message);
-            return res.status(500).json({ error: 'Erro ao buscar histórico.'});
-        }
-        console.log(`[GET /history] Retornando ${rows.length} registros.`);
-        res.status(200).json(rows);
-    });
-});
-
-
-
-app.get('/history/active', (req, res) => {
-    console.log("[GET /history/active] Buscando histórico ativo...");
-    const query = `
-        SELECT
-            h.trainer,
-            h.date,
-            p.name AS pokemon_name,
-            c.name AS clan_name
-        FROM history h
-        JOIN pokemon p ON h.pokemon = p.id
-        LEFT JOIN clan_pokemon cp ON p.id = cp.pokemon_id
-        LEFT JOIN clan c ON cp.clan_id = c.id
-        WHERE h.returned = 0
-        ORDER BY h.date DESC, c.name COLLATE NOCASE, p.name COLLATE NOCASE
-    `;
-
-    db.all(query, [], (err, rows) => {
-        if (err) {
-            console.error("[GET /history/active] Erro DB:", err.message);
-            return res.status(500).json({ error: 'Erro ao buscar histórico ativo.' });
-        }
-
-        console.log(`[GET /history/active] ${rows.length} registros ativos encontrados, agrupando...`);
-        const groupedHistory = {};
-        rows.forEach(entry => {
-
-            const key = `${entry.trainer}-${entry.date}`;
-
-            if (!groupedHistory[key]) {
-                groupedHistory[key] = {
-                    trainer: entry.trainer,
-                    date: entry.date,
-                    pokemons: [],
-                };
-            }
-
-
-            groupedHistory[key].pokemons.push({
-                name: entry.pokemon_name,
-                clan: entry.clan_name || 'unknown'
-            });
-
-        });
-
-        const result = Object.values(groupedHistory);
-        console.log(`[GET /history/active] Retornando ${result.length} grupos ativos.`);
-        res.status(200).json(result);
-    });
-});
-
-
-app.put('/history/:id/return', (req, res) => {
-    const { id } = req.params;
-    const returnDateISO = new Date().toISOString();
-
-    console.log(`[RETURN API] Recebida requisição para devolver entrada do histórico ID: ${id}`);
-
-
-    db.get('SELECT pokemon, returned FROM history WHERE id = ?', [id], (err, historyEntry) => {
-        if (err) {
-            console.error(`[RETURN API] Erro DB ao buscar history ID ${id}: ${err.message}`);
-            return res.status(500).json({ error: 'Erro ao buscar registro de empréstimo.' });
-        }
-        if (!historyEntry) {
-            console.warn(`[RETURN API] Histórico ID ${id} não encontrado.`);
-            return res.status(404).json({ error: 'Registro de empréstimo não encontrado.' });
-        }
-
-        console.log(`[RETURN API] Histórico ID ${id} encontrado. Status atual 'returned': ${historyEntry.returned}. Pokemon ID associado: ${historyEntry.pokemon}`);
-
-
-        if (historyEntry.returned) {
-            console.warn(`[RETURN API] Histórico ID ${id} já está marcado como devolvido.`);
-            return res.status(200).json({ message: 'Registro já estava marcado como devolvido.' });
-        }
-
-        const pokemonId = historyEntry.pokemon;
-
-
-        db.serialize(() => {
-            db.run('BEGIN TRANSACTION', (beginErr) => {
-                 if (beginErr) {
-                     console.error(`[RETURN API] Erro ao iniciar transação para ID ${id}: ${beginErr.message}`);
-                     return res.status(500).json({ error: 'Erro interno ao iniciar devolução.' });
-                 }
-                 console.log(`[RETURN API] Transação iniciada para ID ${id}.`);
-
-
-                db.run('UPDATE pokemon SET status = "available" WHERE id = ?', [pokemonId], function (updatePokemonErr) {
-                    if (updatePokemonErr) {
-                        console.error(`[RETURN API] Erro ao atualizar status do Pokémon ${pokemonId} (para Histórico ID ${id}): ${updatePokemonErr.message}`);
-                        db.run('ROLLBACK');
-                        return res.status(500).json({ error: 'Erro ao atualizar status do Pokémon.' });
-                    }
-                    console.log(`[RETURN API] Status do Pokémon ${pokemonId} atualizado para 'available'. Linhas afetadas: ${this.changes}`);
-
-
-                    db.run('UPDATE history SET returned = 1, returnDate = ? WHERE id = ? AND returned = 0',
-                           [returnDateISO, id], function (updateHistoryErr) {
-                        if (updateHistoryErr) {
-                            console.error(`[RETURN API] Erro ao atualizar history ID ${id}: ${updateHistoryErr.message}`);
-                            db.run('ROLLBACK');
-                            return res.status(500).json({ error: 'Erro ao atualizar registro histórico.' });
-                        }
-
-                        if (this.changes === 0) {
-                            console.warn(`[RETURN API] Nenhuma linha atualizada no histórico para ID ${id} (pode já ter sido devolvido ou ID inválido).`);
-                            db.run('ROLLBACK');
-                            return res.status(409).json({ error: 'Devolução pode já ter sido registrada ou o ID é inválido.' });
-                        }
-
-                        console.log(`[RETURN API] Histórico ID ${id} atualizado para returned=1 com data ${returnDateISO}. Linhas afetadas: ${this.changes}`);
-
-
-                        db.run('COMMIT', (commitErr) => {
-                             if (commitErr) {
-                                 console.error(`[RETURN API] Erro ao commitar transação para ID ${id}: ${commitErr.message}`);
-                                 return res.status(500).json({ error: 'Erro ao finalizar devolução.' });
-                             }
-                             console.log(`[RETURN API] Transação para ID ${id} commitada com sucesso.`);
-                             res.status(200).json({ message: 'Pokémon devolvido com sucesso!' });
-                        });
-                    });
-                });
-            });
-        });
-    });
-});
-
-
 
 app.post('/clans/:clan/pokemons', (req, res) => {
     const { clan } = req.params;
@@ -355,7 +133,6 @@ app.post('/clans/:clan/pokemons', (req, res) => {
         const clanId = clanRow.id;
         const pokemonId = uuidv4();
 
-
         db.serialize(() => {
             db.run('BEGIN TRANSACTION');
 
@@ -370,7 +147,6 @@ app.post('/clans/:clan/pokemons', (req, res) => {
                 }
                 console.log(`[POST /clans/:clan/pokemons] Pokémon ${name} inserido com ID ${pokemonId}.`);
 
-
                 const clanPokemonId = uuidv4();
                 db.run(`INSERT INTO clan_pokemon (id, clan_id, pokemon_id) VALUES (?, ?, ?)`,
                        [clanPokemonId, clanId, pokemonId], function (insertClanPokeErr) {
@@ -380,7 +156,6 @@ app.post('/clans/:clan/pokemons', (req, res) => {
                         return res.status(500).json({ error: 'Erro ao associar Pokémon ao clã.' });
                     }
                      console.log(`[POST /clans/:clan/pokemons] Associação criada ID ${clanPokemonId}. Commitando.`);
-
 
                     db.run('COMMIT', (commitErr) => {
                          if(commitErr){
@@ -395,44 +170,51 @@ app.post('/clans/:clan/pokemons', (req, res) => {
     });
 });
 
-
-
-
-app.delete('/history/:id', (req, res) => {
-    const { id } = req.params;
-    console.log(`[DELETE /history/:id] Recebida requisição para deletar ID: ${id}`);
-
-
-    if (isNaN(parseInt(id, 10))) {
-         return res.status(400).json({ error: 'ID de histórico inválido.' });
-    }
-
-    const query = `DELETE FROM history WHERE id = ?`;
-    db.run(query, [id], function(err) {
+app.get('/trainers', (req, res) => {
+    console.log("[GET /trainers] Buscando lista de treinadores...");
+    // Seleciona apenas id, name e email (NUNCA a senha)
+    const query = `SELECT id, name, email FROM trainers ORDER BY name COLLATE NOCASE`;
+    db.all(query, [], (err, rows) => {
         if (err) {
-            console.error(`[DELETE /history/:id] Erro DB ao deletar ID ${id}:`, err.message);
-            return res.status(500).json({ error: 'Erro ao deletar registro do histórico.' });
+            console.error("[GET /trainers] Erro DB:", err.message);
+            return res.status(500).json({ error: 'Erro ao buscar lista de treinadores.' });
         }
-        if (this.changes === 0) {
-             console.warn(`[DELETE /history/:id] Nenhum registro encontrado para deletar com ID ${id}.`);
-            return res.status(404).json({ error: 'Registro de histórico não encontrado.' });
-        }
-        console.log(`[DELETE /history/:id] Registro ID ${id} deletado com sucesso. Linhas afetadas: ${this.changes}`);
-        res.status(200).json({ message: 'Registro deletado com sucesso!' });
+        console.log(`[GET /trainers] Retornando ${rows.length} treinadores.`);
+        res.status(200).json(rows);
     });
 });
 
+// DELETE /trainers/:id (NOVO: Deletar um treinador - requer senha ADMIN)
+app.delete('/trainers/:id', (req, res) => {
+    const { id } = req.params;
+    // A senha do admin DEVE ser enviada na requisição (ex: no body ou header)
+    // Aqui, vamos supor que ela vem no body para simplificar o exemplo no frontend
+    const { admin_password } = req.body;
 
-app.delete('/history', (req, res) => {
-    console.warn("[DELETE /history] Recebida requisição para DELETAR TODO O HISTÓRICO!");
-    const query = `DELETE FROM history`;
-    db.run(query, [], function(err) {
+    console.warn(`[DELETE /trainers/:id] Recebida requisição para DELETAR TREINADOR ID: ${id}`);
+
+    if (admin_password !== ADMIN_PASSWORD) {
+        console.warn(`[DELETE /trainers/:id] Tentativa de deletar treinador ${id} com senha de admin inválida.`);
+        return res.status(403).json({ error: 'Senha de administrador incorreta.' });
+    }
+
+    if (!id) {
+        return res.status(400).json({ error: 'ID do treinador é obrigatório.' });
+    }
+
+    // O 'ON DELETE CASCADE' na tabela 'history' cuidará de remover o histórico associado.
+    const query = `DELETE FROM trainers WHERE id = ?`;
+    db.run(query, [id], function(err) {
         if (err) {
-             console.error("[DELETE /history] Erro DB:", err.message);
-             return res.status(500).json({ error: 'Erro ao deletar histórico.' });
+            console.error(`[DELETE /trainers/:id] Erro DB ao deletar treinador ID ${id}:`, err.message);
+            return res.status(500).json({ error: 'Erro ao deletar treinador.' });
         }
-        console.log(`[DELETE /history] Histórico deletado. Linhas afetadas: ${this.changes}`);
-        res.status(200).json({ message: `Histórico deletado com sucesso! (${this.changes} registros removidos)` });
+        if (this.changes === 0) {
+             console.warn(`[DELETE /trainers/:id] Nenhum treinador encontrado para deletar com ID ${id}.`);
+            return res.status(404).json({ error: 'Treinador não encontrado.' });
+        }
+        console.log(`[DELETE /trainers/:id] Treinador ID ${id} deletado com sucesso. Linhas afetadas: ${this.changes}.`);
+        res.status(200).json({ message: 'Treinador deletado com sucesso!' });
     });
 });
 
@@ -441,10 +223,15 @@ app.delete('/pokemons/:id', (req, res) => {
     const { id } = req.params;
     console.warn(`[DELETE /pokemons/:id] Recebida requisição para DELETAR POKÉMON ID: ${id}`);
 
+    // AQUI DEVERIA VALIDAR A SENHA ADMIN (passada via header ou body)
+    // Ex: const providedPassword = req.headers['admin-password'];
+    // if (providedPassword !== ADMIN_PASSWORD) {
+    //     return res.status(403).json({ error: 'Senha de administrador inválida para deletar Pokémon.' });
+    // }
+
     if (typeof id !== 'string' || id.length < 10) {
          return res.status(400).json({ error: 'ID de Pokémon inválido.' });
     }
-
 
     db.get('SELECT status FROM pokemon WHERE id = ?', [id], (err, pokemon) => {
         if (err) {
@@ -459,8 +246,6 @@ app.delete('/pokemons/:id', (req, res) => {
             return res.status(409).json({ error: 'Não é possível deletar um Pokémon que está atualmente emprestado. Devolva-o primeiro.' });
         }
 
-
-
         db.serialize(() => {
             db.run('BEGIN TRANSACTION');
 
@@ -472,14 +257,12 @@ app.delete('/pokemons/:id', (req, res) => {
                 }
                 console.log(`[DELETE /pokemons/:id] Associação com clã removida para ID ${id}. Linhas afetadas: ${this.changes}`);
 
-
                 db.run('DELETE FROM pokemon WHERE id = ?', [id], function(delPokeErr) {
                     if (delPokeErr) {
                         console.error(`[DELETE /pokemons/:id] Erro DB ao deletar Pokémon ID ${id}:`, delPokeErr.message);
                         db.run('ROLLBACK');
                         return res.status(500).json({ error: 'Erro ao deletar Pokémon.' });
                     }
-
 
                     if (this.changes === 0) {
                         console.warn(`[DELETE /pokemons/:id] Nenhuma linha deletada na tabela pokemon para ID ${id} (já deletado?).`);
@@ -500,4 +283,359 @@ app.delete('/pokemons/:id', (req, res) => {
             });
         });
     });
+});
+
+
+// --- Endpoints de Histórico ---
+
+app.post('/history', (req, res) => {
+    const { pokemons, trainer_password } = req.body; // Espera trainer_password
+    const dateISO = new Date().toISOString();
+
+    if (!pokemons || !Array.isArray(pokemons) || pokemons.length === 0) {
+        return res.status(400).json({ error: 'Lista de Pokémons inválida ou vazia.' });
+    }
+    if (!trainer_password) {
+        return res.status(400).json({ error: 'Senha do treinador é obrigatória.' });
+    }
+
+    console.log(`[POST /history] Recebido pedido com senha para ${pokemons.join(', ')} em ${dateISO}`);
+
+    // 1. Validar senha do treinador
+    db.get('SELECT id, name FROM trainers WHERE password = ?', [trainer_password], (trainerErr, trainerRow) => {
+        if (trainerErr) {
+            console.error(`[POST /history] Erro DB ao buscar treinador por senha:`, trainerErr.message);
+            return res.status(500).json({ error: 'Erro interno ao validar treinador.' });
+        }
+        if (!trainerRow) {
+            console.warn(`[POST /history] Senha de treinador inválida fornecida.`);
+            return res.status(401).json({ error: 'Senha do treinador inválida.' });
+        }
+
+        const trainerId = trainerRow.id;
+        const trainerName = trainerRow.name;
+        console.log(`[POST /history] Treinador ${trainerName} (ID: ${trainerId}) validado.`);
+
+        // 2. Continuar com a lógica de transação e validação/atualização de Pokémon
+        db.serialize(() => {
+            db.run('BEGIN TRANSACTION', (beginErr) => {
+                if(beginErr){
+                    console.error(`[POST /history] Erro ao iniciar transação:`, beginErr.message);
+                    return res.status(500).json({ error: 'Erro interno ao iniciar registro.' });
+                }
+                console.log(`[POST /history] Transação iniciada para treinador ID ${trainerId}.`);
+
+                const validationPromises = pokemons.map(pokemonId => {
+                    return new Promise((resolve, reject) => {
+                        if (typeof pokemonId !== 'string' || pokemonId.length < 10) {
+                            return reject(new Error(`ID de Pokémon inválido: ${pokemonId}`));
+                        }
+                        db.get('SELECT name, status FROM pokemon WHERE id = ?', [pokemonId], (err, row) => {
+                            if (err) return reject(err);
+                            if (!row) return reject(new Error(`Pokémon com ID ${pokemonId} não encontrado no banco.`));
+                            resolve({ id: pokemonId, name: row.name, status: row.status });
+                        });
+                    });
+                });
+
+                Promise.all(validationPromises)
+                    .then(pokemonData => {
+                        console.log(`[POST /history] Dados dos pokémons validados:`, pokemonData.map(p=>({id:p.id, name:p.name, status:p.status})));
+
+                        const unavailablePokemons = pokemonData.filter(p => p.status !== 'available');
+                        if (unavailablePokemons.length > 0) {
+                            const names = unavailablePokemons.map(p => p.name || p.id).join(', ');
+                            throw new Error(`Pokémon(s) não disponível(is): ${names}. Status atual: ${unavailablePokemons.map(p=>p.status).join(',')}`);
+                        }
+
+                        const updatePromises = pokemonData.map(({ id }) => {
+                            return new Promise((resolve, reject) => {
+                                db.run('UPDATE pokemon SET status = "borrowed" WHERE id = ? AND status = "available"', [id], function (err) {
+                                    if (err) return reject(err);
+                                    if (this.changes === 0) return reject(new Error(`Pokémon ${id} não pôde ser marcado como emprestado (status pode ter mudado).`));
+                                    console.log(`[POST /history] Status do Pokémon ${id} atualizado para 'borrowed'.`);
+                                    resolve();
+                                });
+                            });
+                        });
+
+                        return Promise.all(updatePromises).then(() => pokemonData);
+                    })
+                    .then((pokemonData) => {
+                        console.log(`[POST /history] Inserindo ${pokemonData.length} registro(s) no histórico para trainer ID ${trainerId}...`);
+
+                        const historyPromises = pokemonData.map(({ id, name }) => {
+                            return new Promise((resolve, reject) => {
+                                // Inserir trainer_id em vez de trainer name
+                                db.run('INSERT INTO history (pokemon, pokemon_name, trainer_id, date) VALUES (?, ?, ?, ?)',
+                                    [id, name, trainerId, dateISO], function (err) {
+                                    if (err) return reject(err);
+                                    console.log(`[POST /history] Registro ID ${this.lastID} inserido para Pokémon ${id}.`);
+                                    resolve(this.lastID);
+                                });
+                            });
+                        });
+                        return Promise.all(historyPromises);
+                    })
+                    .then((insertedIds) => {
+                        console.log(`[POST /history] Registros inseridos com IDs: ${insertedIds.join(', ')}. Commitando transação.`);
+
+                        db.run('COMMIT', (commitErr) => {
+                             if(commitErr){
+                                console.error(`[POST /history] Erro ao commitar transação:`, commitErr.message);
+                                db.run('ROLLBACK');
+                                return res.status(500).json({ error: 'Erro interno ao finalizar registro.' });
+                             }
+                             console.log(`[POST /history] Transação commitada com sucesso para trainer ID ${trainerId}.`);
+                             // Retorna o nome do treinador na resposta para feedback
+                             res.status(201).json({ message: `Pokémons registrados com sucesso para ${trainerName}!` });
+                        });
+                    })
+                    .catch(err => {
+                        console.error(`[POST /history] Erro durante o processo para trainer ID ${trainerId}: ${err.message}`);
+                        db.run('ROLLBACK', (rollbackErr) => {
+                             if(rollbackErr) console.error(`[POST /history] Erro ao executar ROLLBACK:`, rollbackErr.message);
+                             else console.log(`[POST /history] Transação revertida (ROLLBACK) para trainer ID ${trainerId}.`);
+                        });
+
+                        const statusCode = err.message.includes('disponível') || err.message.includes('emprestado') || err.message.includes('encontrado') || err.message.includes('inválido') ? 400 : 500;
+                        res.status(statusCode).json({ error: err.message });
+                    });
+            });
+        });
+    });
+});
+
+app.get('/history', (req, res) => {
+    console.log("[GET /history] Buscando histórico completo...");
+    const query = `
+        SELECT
+            h.id, h.pokemon, h.pokemon_name,
+            h.trainer_id, t.name AS trainer_name, -- Busca nome do treinador
+            h.date, h.returned, h.returnDate,
+            c.name AS clan_name
+        FROM history h
+        LEFT JOIN trainers t ON h.trainer_id = t.id -- JOIN com trainers
+        LEFT JOIN pokemon p ON h.pokemon = p.id
+        LEFT JOIN clan_pokemon cp ON p.id = cp.pokemon_id
+        LEFT JOIN clan c ON cp.clan_id = c.id
+        ORDER BY h.date DESC, c.name COLLATE NOCASE, p.name COLLATE NOCASE
+    `;
+    db.all(query, [], (err, rows) => {
+        if (err) {
+            console.error("[GET /history] Erro DB:", err.message);
+            return res.status(500).json({ error: 'Erro ao buscar histórico.'});
+        }
+        console.log(`[GET /history] Retornando ${rows.length} registros.`);
+        res.status(200).json(rows);
+    });
+});
+
+app.get('/history/active', (req, res) => {
+    console.log("[GET /history/active] Buscando histórico ativo...");
+    const query = `
+        SELECT
+            h.trainer_id,
+            t.name AS trainer_name, -- Busca nome do treinador
+            h.date,
+            p.name AS pokemon_name,
+            c.name AS clan_name
+        FROM history h
+        JOIN trainers t ON h.trainer_id = t.id -- JOIN com trainers
+        JOIN pokemon p ON h.pokemon = p.id
+        LEFT JOIN clan_pokemon cp ON p.id = cp.pokemon_id
+        LEFT JOIN clan c ON cp.clan_id = c.id
+        WHERE h.returned = 0
+        ORDER BY h.date DESC, c.name COLLATE NOCASE, p.name COLLATE NOCASE
+    `;
+
+    db.all(query, [], (err, rows) => {
+        if (err) {
+            console.error("[GET /history/active] Erro DB:", err.message);
+            return res.status(500).json({ error: 'Erro ao buscar histórico ativo.' });
+        }
+
+        console.log(`[GET /history/active] ${rows.length} registros ativos encontrados, agrupando...`);
+        const groupedHistory = {};
+        rows.forEach(entry => {
+            // Usa trainer_name para a chave se quiser agrupar visualmente por nome, mas mantém trainer_id se precisar dele
+            const key = `${entry.trainer_name}-${entry.date}`; // Chave de agrupamento usa nome + data
+
+            if (!groupedHistory[key]) {
+                groupedHistory[key] = {
+                    trainer_id: entry.trainer_id, // Guarda o ID
+                    trainer_name: entry.trainer_name, // Guarda o nome
+                    date: entry.date,
+                    pokemons: [],
+                };
+            }
+
+            groupedHistory[key].pokemons.push({
+                name: entry.pokemon_name,
+                clan: entry.clan_name || 'unknown'
+            });
+        });
+
+        const result = Object.values(groupedHistory);
+        console.log(`[GET /history/active] Retornando ${result.length} grupos ativos.`);
+        res.status(200).json(result); // A resposta agora contém trainer_name e trainer_id
+    });
+});
+
+app.put('/history/:id/return', (req, res) => {
+    const { id } = req.params;
+    const { trainer_password } = req.body; // <<< Recebe a senha do corpo da requisição
+    const returnDateISO = new Date().toISOString();
+
+    console.log(`[RETURN API] Recebida requisição para devolver entrada ID: ${id}`);
+
+    if (!trainer_password) {
+        console.warn(`[RETURN API] Senha do treinador não fornecida para devolução do histórico ID: ${id}`);
+        return res.status(400).json({ error: 'Senha do treinador é obrigatória para devolver.' });
+    }
+
+    // 1. Buscar a entrada do histórico E o ID do treinador associado
+    db.get('SELECT pokemon, returned, trainer_id FROM history WHERE id = ?', [id], (err, historyEntry) => {
+        if (err) {
+            console.error(`[RETURN API] Erro DB ao buscar history ID ${id}: ${err.message}`);
+            return res.status(500).json({ error: 'Erro ao buscar registro de empréstimo.' });
+        }
+        if (!historyEntry) {
+            console.warn(`[RETURN API] Histórico ID ${id} não encontrado.`);
+            return res.status(404).json({ error: 'Registro de empréstimo não encontrado.' });
+        }
+        if (historyEntry.returned) {
+            console.warn(`[RETURN API] Histórico ID ${id} já está marcado como devolvido.`);
+            // Ainda retorna sucesso se já estiver devolvido, evita erros desnecessários no frontend
+            return res.status(200).json({ message: 'Registro já estava marcado como devolvido.' });
+        }
+
+        const pokemonId = historyEntry.pokemon;
+        const trainerId = historyEntry.trainer_id; // <<< Pega o ID do treinador que pegou
+
+        // 2. Buscar a senha correta do treinador no banco de dados
+        db.get('SELECT password FROM trainers WHERE id = ?', [trainerId], (trainerErr, trainerRow) => {
+            if (trainerErr) {
+                console.error(`[RETURN API] Erro DB ao buscar senha do treinador ID ${trainerId} (para Histórico ID ${id}): ${trainerErr.message}`);
+                return res.status(500).json({ error: 'Erro interno ao verificar treinador.' });
+            }
+            if (!trainerRow) {
+                 console.error(`[RETURN API] Treinador ID ${trainerId} associado ao Histórico ID ${id} não encontrado na tabela trainers.`);
+                 // Isso indica um problema de integridade de dados, mas retornamos um erro genérico por segurança.
+                return res.status(500).json({ error: 'Erro ao verificar dados do treinador associado.' });
+            }
+
+            const correctPassword = trainerRow.password;
+
+            // 3. Comparar a senha fornecida com a senha correta
+            // Lembre-se: Em produção, use bcrypt.compare() aqui!
+            if (trainer_password !== correctPassword) {
+                console.warn(`[RETURN API] Senha incorreta fornecida para devolução do histórico ID: ${id} (Treinador ID: ${trainerId})`);
+                return res.status(401).json({ error: 'Senha do treinador inválida.' }); // 401 Unauthorized
+            }
+
+            // 4. Se a senha estiver correta, prosseguir com a transação de devolução
+            console.log(`[RETURN API] Senha validada para devolução do histórico ID: ${id}. Iniciando transação.`);
+            db.serialize(() => {
+                db.run('BEGIN TRANSACTION', (beginErr) => {
+                     if (beginErr) {
+                         console.error(`[RETURN API] Erro ao iniciar transação para ID ${id}: ${beginErr.message}`);
+                         return res.status(500).json({ error: 'Erro interno ao iniciar devolução.' });
+                     }
+                     console.log(`[RETURN API] Transação iniciada para ID ${id}.`);
+
+                    db.run('UPDATE pokemon SET status = "available" WHERE id = ?', [pokemonId], function (updatePokemonErr) {
+                        if (updatePokemonErr) {
+                            console.error(`[RETURN API] Erro ao atualizar status do Pokémon ${pokemonId} (para Histórico ID ${id}): ${updatePokemonErr.message}`);
+                            db.run('ROLLBACK');
+                            return res.status(500).json({ error: 'Erro ao atualizar status do Pokémon.' });
+                        }
+                        console.log(`[RETURN API] Status do Pokémon ${pokemonId} atualizado para 'available'. Linhas afetadas: ${this.changes}`);
+
+                        db.run('UPDATE history SET returned = 1, returnDate = ? WHERE id = ? AND returned = 0',
+                               [returnDateISO, id], function (updateHistoryErr) {
+                            if (updateHistoryErr) {
+                                console.error(`[RETURN API] Erro ao atualizar history ID ${id}: ${updateHistoryErr.message}`);
+                                db.run('ROLLBACK');
+                                return res.status(500).json({ error: 'Erro ao atualizar registro histórico.' });
+                            }
+
+                            if (this.changes === 0) {
+                                console.warn(`[RETURN API] Nenhuma linha atualizada no histórico para ID ${id} (pode já ter sido devolvido ou ID inválido).`);
+                                db.run('ROLLBACK');
+                                return res.status(409).json({ error: 'Devolução pode já ter sido registrada ou o ID é inválido.' });
+                            }
+
+                            console.log(`[RETURN API] Histórico ID ${id} atualizado para returned=1 com data ${returnDateISO}. Linhas afetadas: ${this.changes}`);
+
+                            db.run('COMMIT', (commitErr) => {
+                                 if (commitErr) {
+                                     console.error(`[RETURN API] Erro ao commitar transação para ID ${id}: ${commitErr.message}`);
+                                     db.run('ROLLBACK'); // Garante rollback em caso de falha no commit
+                                     return res.status(500).json({ error: 'Erro ao finalizar devolução.' });
+                                 }
+                                 console.log(`[RETURN API] Transação para ID ${id} commitada com sucesso.`);
+                                 res.status(200).json({ message: 'Pokémon devolvido com sucesso!' });
+                            });
+                        });
+                    });
+                });
+            }); // Fim db.serialize
+        }); // Fim db.get trainer password
+    }); // Fim db.get history entry
+});
+
+app.delete('/history/:id', (req, res) => {
+    const { id } = req.params;
+    console.log(`[DELETE /history/:id] Recebida requisição para deletar ID: ${id}`);
+
+    // AQUI DEVERIA VALIDAR A SENHA ADMIN
+    // const providedPassword = req.headers['admin-password'];
+    // if (providedPassword !== ADMIN_PASSWORD) {
+    //     return res.status(403).json({ error: 'Senha de administrador inválida para deletar histórico.' });
+    // }
+
+    if (isNaN(parseInt(id, 10))) {
+         return res.status(400).json({ error: 'ID de histórico inválido.' });
+    }
+
+    const query = `DELETE FROM history WHERE id = ?`;
+    db.run(query, [id], function(err) {
+        if (err) {
+            console.error(`[DELETE /history/:id] Erro DB ao deletar ID ${id}:`, err.message);
+            return res.status(500).json({ error: 'Erro ao deletar registro do histórico.' });
+        }
+        if (this.changes === 0) {
+             console.warn(`[DELETE /history/:id] Nenhum registro encontrado para deletar com ID ${id}.`);
+            return res.status(404).json({ error: 'Registro de histórico não encontrado.' });
+        }
+        console.log(`[DELETE /history/:id] Registro ID ${id} deletado com sucesso. Linhas afetadas: ${this.changes}`);
+        res.status(200).json({ message: 'Registro deletado com sucesso!' });
+    });
+});
+
+app.delete('/history', (req, res) => {
+    console.warn("[DELETE /history] Recebida requisição para DELETAR TODO O HISTÓRICO!");
+
+    // AQUI DEVERIA VALIDAR A SENHA ADMIN
+    // const providedPassword = req.headers['admin-password'];
+    // if (providedPassword !== ADMIN_PASSWORD) {
+    //     return res.status(403).json({ error: 'Senha de administrador inválida para deletar todo o histórico.' });
+    // }
+
+    const query = `DELETE FROM history`;
+    db.run(query, [], function(err) {
+        if (err) {
+             console.error("[DELETE /history] Erro DB:", err.message);
+             return res.status(500).json({ error: 'Erro ao deletar histórico.' });
+        }
+        console.log(`[DELETE /history] Histórico deletado. Linhas afetadas: ${this.changes}`);
+        res.status(200).json({ message: `Histórico deletado com sucesso! (${this.changes} registros removidos)` });
+    });
+});
+
+
+// --- Server Start ---
+app.listen(port, () => {
+    console.log(`Servidor rodando em http://localhost:${port}`); // Ajuste para http
 });
