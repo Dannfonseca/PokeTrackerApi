@@ -3,7 +3,7 @@
  * Configuração e inicialização do banco de dados SQLite.
  * Define os schemas das tabelas (pokemon_type, pokemon, clan, trainers, clan_pokemon, history),
  * cria as tabelas se não existirem, insere dados iniciais (clãs) e configura triggers
- * para atualizar timestamps. Tabela history inclui comentário e tempo esperado de devolução.
+ * para atualizar timestamps. Inclui tabela para treinadores cadastrados e campo de comentário no histórico.
  *
  * Funções Exportadas:
  * - db: A instância da conexão com o banco de dados.
@@ -81,14 +81,13 @@ export const db = new sqlite3Verbose.Database('./database.sqlite', (err) => {
             db.run(`
                 CREATE TABLE IF NOT EXISTS history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    pokemon TEXT NOT NULL,
-                    pokemon_name TEXT NOT NULL,
-                    trainer_id TEXT NOT NULL,
-                    date TEXT NOT NULL,
+                    pokemon TEXT NOT NULL, -- ID do pokemon
+                    pokemon_name TEXT NOT NULL, -- Nome do pokemon (redundante para facilitar query)
+                    trainer_id TEXT NOT NULL, -- ID do treinador que pegou
+                    date TEXT NOT NULL, -- Data/hora do empréstimo
                     returned INTEGER DEFAULT 0,
                     returnDate TEXT,
-                    comment TEXT,
-                    expected_return_time TEXT, -- <<< NOVO: Tempo esperado para devolução
+                    comment TEXT, -- <<< NOVO: Coluna para o comentário
                     FOREIGN KEY (trainer_id) REFERENCES trainers(id) ON DELETE CASCADE
                 );
             `, (err) => { if (err) console.error('Erro ao criar/modificar tabela history:', err.message); });
