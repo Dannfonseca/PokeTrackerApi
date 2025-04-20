@@ -3,7 +3,7 @@
  * Configuração e inicialização do banco de dados SQLite.
  * Define os schemas das tabelas (pokemon_type, pokemon, clan, trainers, clan_pokemon, history),
  * cria as tabelas se não existirem, insere dados iniciais (clãs) e configura triggers
- * para atualizar timestamps. Inclui tabela para treinadores cadastrados.
+ * para atualizar timestamps. Tabela history inclui comentário e tempo esperado de devolução.
  *
  * Funções Exportadas:
  * - db: A instância da conexão com o banco de dados.
@@ -22,7 +22,7 @@ export const db = new sqlite3Verbose.Database('./database.sqlite', (err) => {
 
         db.serialize(() => {
 
-            // --- Criação das Tabelas (sem alterações aqui) ---
+            // --- Criação das Tabelas ---
             db.run(`
                 CREATE TABLE IF NOT EXISTS pokemon_type (
                     id TEXT PRIMARY KEY,
@@ -81,12 +81,14 @@ export const db = new sqlite3Verbose.Database('./database.sqlite', (err) => {
             db.run(`
                 CREATE TABLE IF NOT EXISTS history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    pokemon TEXT NOT NULL, -- ID do pokemon
-                    pokemon_name TEXT NOT NULL, -- Nome do pokemon (redundante para facilitar query)
-                    trainer_id TEXT NOT NULL, -- ID do treinador que pegou
-                    date TEXT NOT NULL, -- Data/hora do empréstimo
+                    pokemon TEXT NOT NULL,
+                    pokemon_name TEXT NOT NULL,
+                    trainer_id TEXT NOT NULL,
+                    date TEXT NOT NULL,
                     returned INTEGER DEFAULT 0,
                     returnDate TEXT,
+                    comment TEXT,
+                    expected_return_time TEXT, -- <<< NOVO: Tempo esperado para devolução
                     FOREIGN KEY (trainer_id) REFERENCES trainers(id) ON DELETE CASCADE
                 );
             `, (err) => { if (err) console.error('Erro ao criar/modificar tabela history:', err.message); });
@@ -103,8 +105,7 @@ export const db = new sqlite3Verbose.Database('./database.sqlite', (err) => {
                 { id: uuidv4(), name: 'naturia', elements: 'Grass, Bug', color: '#16a34a' },
                 { id: uuidv4(), name: 'psycraft', elements: 'Psychic, Fairy', color: '#d946ef' },
                 { id: uuidv4(), name: 'raibolt', elements: 'Electric', color: '#facc15' },
-                // ADICIONADO NOVO CLÃ "OUTROS"
-                { id: uuidv4(), name: 'outros', elements: 'Utilitários Diversos', color: '#71717a' } // Cinza neutro como exemplo
+                { id: uuidv4(), name: 'outros', elements: 'Utilitários Diversos', color: '#71717a' }
             ];
 
             clans.forEach(clan => {
@@ -113,12 +114,11 @@ export const db = new sqlite3Verbose.Database('./database.sqlite', (err) => {
                     [clan.id, clan.name, clan.elements, clan.color],
                     (err) => {
                         if (err) console.error(`Erro ao inserir clã ${clan.name}:`, err.message);
-                        // else console.log(`Clã ${clan.name} verificado/inserido.`); // Log opcional
                     }
                 );
             });
 
-            // --- Criação dos Triggers (sem alterações aqui) ---
+            // --- Criação dos Triggers ---
             db.run(`
                 CREATE TRIGGER IF NOT EXISTS update_pokemon_updated_at
                 AFTER UPDATE ON pokemon
@@ -136,7 +136,6 @@ export const db = new sqlite3Verbose.Database('./database.sqlite', (err) => {
                     UPDATE trainers SET updated_at = datetime('now') WHERE id = OLD.id;
                 END;
             `, (err) => { if (err) console.error('Erro ao criar trigger update_trainers_updated_at:', err.message); });
-
 
             console.log('Estrutura do banco de dados verificada/criada.');
         });
