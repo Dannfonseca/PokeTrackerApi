@@ -23,6 +23,12 @@ const port = process.env.PORT || 3000;
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 
+// <<< NOVO: Endpoint simples para Health Check / Keep-alive >>>
+app.get('/health', (req, res) => {
+    console.log("[GET /health] Ping received.");
+    res.status(200).send('OK'); // Envia uma resposta simples e rápida
+});
+
 // --- Endpoints de Treinadores ---
 // (Endpoints /trainers GET, POST, DELETE permanecem os mesmos)
 app.post('/trainers', (req, res) => {
