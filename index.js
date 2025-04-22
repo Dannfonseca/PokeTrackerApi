@@ -15,7 +15,7 @@ import express from 'express';
 import cors from 'cors';
 import { db, uuidv4 } from './database.js';
 
-const ADMIN_PASSWORD = 'raito123';
+const ADMIN_PASSWORD = 'russelgay24';
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -34,6 +34,7 @@ app.get('/health', (req, res) => {
 app.post('/trainers', (req, res) => {
     const { name, email, password, admin_password } = req.body;
     console.log(`[POST /trainers] Recebida requisição para adicionar treinador: ${name} (${email})`);
+    // Validação da senha admin (agora compara com 'russelgay24')
     if (admin_password !== ADMIN_PASSWORD) {
         console.warn(`[POST /trainers] Tentativa de adicionar treinador com senha de admin inválida.`);
         return res.status(403).json({ error: 'Senha de administrador incorreta.' });
@@ -59,22 +60,26 @@ app.post('/trainers', (req, res) => {
         res.status(201).json({ message: `Treinador ${name} adicionado com sucesso!`, trainerId: trainerId });
     });
 });
+
 app.get('/trainers', (req, res) => {
     console.log("[GET /trainers] Buscando lista de treinadores...");
-    const query = `SELECT id, name, email FROM trainers ORDER BY name COLLATE NOCASE`;
+    // <<< MUDANÇA: Não seleciona mais o email >>>
+    const query = `SELECT id, name FROM trainers ORDER BY name COLLATE NOCASE`;
     db.all(query, [], (err, rows) => {
         if (err) {
             console.error("[GET /trainers] Erro DB:", err.message);
             return res.status(500).json({ error: 'Erro ao buscar lista de treinadores.' });
         }
-        console.log(`[GET /trainers] Retornando ${rows.length} treinadores.`);
-        res.status(200).json(rows);
+        console.log(`[GET /trainers] Retornando ${rows.length} treinadores (sem email).`);
+        res.status(200).json(rows); // Envia apenas ID e Nome
     });
 });
+
 app.delete('/trainers/:id', (req, res) => {
     const { id } = req.params;
     const { admin_password } = req.body;
     console.warn(`[DELETE /trainers/:id] Recebida requisição para DELETAR TREINADOR ID: ${id}`);
+    // Validação da senha admin (agora compara com 'russelgay24')
     if (admin_password !== ADMIN_PASSWORD) {
         console.warn(`[DELETE /trainers/:id] Tentativa de deletar treinador ${id} com senha de admin inválida.`);
         return res.status(403).json({ error: 'Senha de administrador incorreta.' });
