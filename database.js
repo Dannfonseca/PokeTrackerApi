@@ -1,9 +1,10 @@
 // TODOLISTPOKEMON/poke-api/database.js
 /**
  * Configuração e inicialização do banco de dados SQLite.
- * Define os schemas das tabelas (pokemon_type, pokemon, clan, trainers, clan_pokemon, history),
- * cria as tabelas se não existirem, insere dados iniciais (clãs) e configura triggers
- * para atualizar timestamps. Inclui tabela para treinadores cadastrados e campo de comentário no histórico.
+ * Define os schemas das tabelas (pokemon_type, pokemon, clan, trainers, clan_pokemon, history,
+ * favorite_lists, favorite_list_pokemons), cria as tabelas se não existirem,
+ * insere dados iniciais (clãs) e configura triggers para atualizar timestamps.
+ * Adicionado trainer_id à tabela favorite_lists.
  *
  * Funções Exportadas:
  * - db: A instância da conexão com o banco de dados.
@@ -87,10 +88,36 @@ export const db = new sqlite3Verbose.Database('./database.sqlite', (err) => {
                     date TEXT NOT NULL, -- Data/hora do empréstimo
                     returned INTEGER DEFAULT 0,
                     returnDate TEXT,
-                    comment TEXT, -- <<< NOVO: Coluna para o comentário
+                    comment TEXT, -- Coluna para o comentário
                     FOREIGN KEY (trainer_id) REFERENCES trainers(id) ON DELETE CASCADE
                 );
             `, (err) => { if (err) console.error('Erro ao criar/modificar tabela history:', err.message); });
+
+            // <<< TABELA MODIFICADA: favorite_lists >>>
+            db.run(`
+                CREATE TABLE IF NOT EXISTS favorite_lists (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    trainer_id TEXT NOT NULL, -- ID do treinador dono da lista
+                    created_at TEXT DEFAULT (datetime('now')),
+                    updated_at TEXT DEFAULT (datetime('now')),
+                    UNIQUE(trainer_id, name), -- Um treinador não pode ter duas listas com o mesmo nome
+                    FOREIGN KEY (trainer_id) REFERENCES trainers(id) ON DELETE CASCADE -- Se o treinador for deletado, suas listas também são
+                );
+            `, (err) => { if (err) console.error('Erro ao criar/modificar tabela favorite_lists:', err.message); });
+
+            db.run(`
+                CREATE TABLE IF NOT EXISTS favorite_list_pokemons (
+                    id TEXT PRIMARY KEY,
+                    list_id TEXT NOT NULL,
+                    pokemon_id TEXT NOT NULL,
+                    added_at TEXT DEFAULT (datetime('now')),
+                    UNIQUE(list_id, pokemon_id),
+                    FOREIGN KEY (list_id) REFERENCES favorite_lists(id) ON DELETE CASCADE,
+                    FOREIGN KEY (pokemon_id) REFERENCES pokemon(id) ON DELETE CASCADE
+                );
+            `, (err) => { if (err) console.error('Erro ao criar tabela favorite_list_pokemons:', err.message); });
+
 
             // --- Inserção dos Clãs ---
             const clans = [
@@ -135,6 +162,16 @@ export const db = new sqlite3Verbose.Database('./database.sqlite', (err) => {
                     UPDATE trainers SET updated_at = datetime('now') WHERE id = OLD.id;
                 END;
             `, (err) => { if (err) console.error('Erro ao criar trigger update_trainers_updated_at:', err.message); });
+
+              db.run(`
+                 CREATE TRIGGER IF NOT EXISTS update_favorite_lists_updated_at
+                 AFTER UPDATE ON favorite_lists
+                 FOR EACH ROW
+                 BEGIN
+                     UPDATE favorite_lists SET updated_at = datetime('now') WHERE id = OLD.id;
+                 END;
+             `, (err) => { if (err) console.error('Erro ao criar trigger update_favorite_lists_updated_at:', err.message); });
+
 
             console.log('Estrutura do banco de dados verificada/criada.');
         });
