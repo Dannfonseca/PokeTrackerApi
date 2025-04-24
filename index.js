@@ -9,6 +9,7 @@
  * Adicionados endpoints para gerenciar e usar Listas Favoritas públicas.
  * Adicionado endpoint GET /pokemons/all-by-clan para listar todos os pokémons com status.
  * Listas Favoritas agora requerem senha do treinador para criação, edição e exclusão.
+ * <<< MODIFICADO: Endpoints /history e /history/active agora incluem p.held_item nos resultados. >>>
  */
 
 import express from 'express';
@@ -36,7 +37,6 @@ async function validateTrainerPassword(password) {
 }
 
 // --- Endpoints de Treinadores ---
-// (Sem alterações aqui)
 app.post('/trainers', (req, res) => {
     const { name, email, password, admin_password } = req.body;
     console.log(`[POST /trainers] Recebida requisição para adicionar treinador: ${name} (${email})`);
@@ -114,7 +114,7 @@ app.get('/pokemons/available', (req, res) => {
         FROM pokemon p
         LEFT JOIN clan_pokemon cp ON p.id = cp.pokemon_id
         LEFT JOIN clan c ON cp.clan_id = c.id
-        WHERE p.status = 'available'  -- Apenas disponíveis
+        WHERE p.status = 'available'
         ORDER BY c.name COLLATE NOCASE, p.name COLLATE NOCASE
     `;
     db.all(query, [], (err, rows) => {
@@ -133,14 +133,12 @@ app.get('/pokemons/available', (req, res) => {
                 id: row.id,
                 name: row.name,
                 held_item: row.held_item
-                // Não inclui status aqui pois são todos 'available'
             });
         });
         res.status(200).json(groupedPokemons);
     });
 });
 
-// <<< NOVO ENDPOINT >>>
 app.get('/pokemons/all-by-clan', (req, res) => {
     console.log("[GET /pokemons/all-by-clan] Buscando TODOS os pokémons por clã...");
     const query = `
@@ -158,7 +156,7 @@ app.get('/pokemons/all-by-clan', (req, res) => {
         console.log(`[GET /pokemons/all-by-clan] Encontrados ${rows.length} pokémons no total.`);
         const groupedPokemons = {};
         rows.forEach(row => {
-            const clan = row.clan_name || 'Sem Clã'; // Agrupa pokémons sem clã se houver
+            const clan = row.clan_name || 'Sem Clã';
             if (!groupedPokemons[clan]) {
                 groupedPokemons[clan] = [];
             }
@@ -166,10 +164,10 @@ app.get('/pokemons/all-by-clan', (req, res) => {
                 id: row.id,
                 name: row.name,
                 held_item: row.held_item,
-                status: row.status // Inclui o status aqui
+                status: row.status
             });
         });
-        // Ordena os clãs alfabeticamente (exceto "Sem Clã", se existir)
+
         const sortedGroupedPokemons = Object.keys(groupedPokemons)
             .sort((a, b) => {
                 if (a === 'Sem Clã') return 1;
@@ -188,7 +186,8 @@ app.get('/pokemons/all-by-clan', (req, res) => {
 
 app.get('/pokemons/:id', (req, res) => {
     const { id } = req.params;
-    db.get('SELECT id, name FROM pokemon WHERE id = ?', [id], (err, row) => {
+    // Retorna também o held_item caso seja útil em algum lugar
+    db.get('SELECT id, name, held_item FROM pokemon WHERE id = ?', [id], (err, row) => {
         if (err) {
             console.error(`Erro ao buscar Pokémon ID ${id}:`, err.message);
             return res.status(500).json({ error: 'Erro interno ao buscar Pokémon.' });
@@ -223,7 +222,7 @@ app.get('/clans/:clan/pokemons', (req, res) => {
 app.post('/clans/:clan/pokemons', (req, res) => {
     const { clan } = req.params;
     const { name, held_item } = req.body;
-    console.log(`[POST /clans/:clan/pokemons] Adicionando ${name} ao clã ${clan}`);
+    console.log(`[POST /clans/:clan/pokemons] Adicionando ${name} ${held_item ? '('+held_item+') ' : ''}ao clã ${clan}`);
     if (!name || name.trim() === '') {
         return res.status(400).json({ error: 'Nome do Pokémon é obrigatório.' });
     }
@@ -325,7 +324,6 @@ app.delete('/pokemons/:id', (req, res) => {
 
 
 // --- Endpoints de Histórico ---
-// (Sem alterações aqui)
 app.post('/history', async (req, res) => {
     const { pokemons, trainer_password, comment } = req.body;
     const dateISO = new Date().toISOString();
@@ -333,7 +331,7 @@ app.post('/history', async (req, res) => {
     if (!pokemons || !Array.isArray(pokemons) || pokemons.length === 0) return res.status(400).json({ error: 'Lista de Pokémons inválida ou vazia.' });
 
     try {
-        const trainer = await validateTrainerPassword(trainer_password); // Valida senha e obtém ID/nome
+        const trainer = await validateTrainerPassword(trainer_password);
         const trainerId = trainer.id;
         const trainerName = trainer.name;
         console.log(`[POST /history] Treinador ${trainerName} (ID: ${trainerId}) validado para empréstimo.`);
@@ -345,17 +343,19 @@ app.post('/history', async (req, res) => {
                 const validationPromises = pokemons.map(pokemonId => {
                     return new Promise((resolve, reject) => {
                         if (typeof pokemonId !== 'string' || pokemonId.length < 10) return reject(new Error(`ID de Pokémon inválido: ${pokemonId}`));
+                        // Pega nome e status para validação
                         db.get('SELECT name, status FROM pokemon WHERE id = ?', [pokemonId], (err, row) => {
                             if (err) return reject(new Error(`Erro DB ao verificar Pokémon ${pokemonId}: ${err.message}`));
                             if (!row) return reject(new Error(`Pokémon com ID ${pokemonId} não encontrado.`));
                             if (row.status !== 'available') return reject(new Error(`Pokémon ${row.name || pokemonId} não está disponível (status: ${row.status}).`));
-                            resolve({ id: pokemonId, name: row.name });
+                            resolve({ id: pokemonId, name: row.name }); // Passa nome para o próximo passo
                         });
                     });
                 });
 
                 Promise.all(validationPromises)
                     .then(pokemonData => {
+                        // Atualiza status para 'borrowed'
                         const updatePromises = pokemonData.map(({ id }) => {
                             return new Promise((resolve, reject) => {
                                 db.run('UPDATE pokemon SET status = "borrowed" WHERE id = ? AND status = "available"', [id], function (err) {
@@ -365,13 +365,14 @@ app.post('/history', async (req, res) => {
                                 });
                             });
                         });
-                        return Promise.all(updatePromises).then(() => pokemonData);
+                        return Promise.all(updatePromises).then(() => pokemonData); // Passa dados incluindo nome
                     })
                     .then(pokemonData => {
-                        const historyPromises = pokemonData.map(({ id, name }) => {
+                        // Insere no histórico, incluindo o nome redundante
+                        const historyPromises = pokemonData.map(({ id, name }) => { // Recebe nome aqui
                             return new Promise((resolve, reject) => {
                                 db.run('INSERT INTO history (pokemon, pokemon_name, trainer_id, date, comment) VALUES (?, ?, ?, ?, ?)',
-                                    [id, name, trainerId, dateISO, comment || null], function (err) {
+                                    [id, name, trainerId, dateISO, comment || null], function (err) { // Insere o nome
                                     if (err) return reject(new Error(`Erro DB ao inserir histórico para ${id}: ${err.message}`));
                                     resolve(this.lastID);
                                 });
@@ -382,6 +383,7 @@ app.post('/history', async (req, res) => {
                     .then(() => {
                         db.run('COMMIT', (commitErr) => {
                             if (commitErr) throw new Error(`Erro ao commitar: ${commitErr.message}`);
+                            console.log(`[POST /history] Empréstimo de ${pokemons.length} pokemons por ${trainerName} commitado.`);
                             res.status(201).json({ message: `Pokémons registrados com sucesso para ${trainerName}!` });
                         });
                     })
@@ -402,16 +404,17 @@ app.post('/history', async (req, res) => {
 
 app.get('/history', (req, res) => {
     console.log("[GET /history] Buscando histórico completo...");
+    // <<< MODIFICADO: Adicionado p.held_item ao SELECT >>>
     const query = `
         SELECT
-            h.id, h.pokemon, h.pokemon_name,
+            h.id, h.pokemon, h.pokemon_name, p.held_item, -- <<< Incluído held_item
             h.trainer_id, t.name AS trainer_name,
             h.date, h.returned, h.returnDate,
             c.name AS clan_name,
             h.comment
         FROM history h
         LEFT JOIN trainers t ON h.trainer_id = t.id
-        LEFT JOIN pokemon p ON h.pokemon = p.id
+        LEFT JOIN pokemon p ON h.pokemon = p.id -- Join com pokemon para pegar o item
         LEFT JOIN clan_pokemon cp ON p.id = cp.pokemon_id
         LEFT JOIN clan c ON cp.clan_id = c.id
         ORDER BY h.date DESC, c.name COLLATE NOCASE, p.name COLLATE NOCASE
@@ -428,13 +431,14 @@ app.get('/history', (req, res) => {
 
 app.get('/history/active', (req, res) => {
     console.log("[GET /history/active] Buscando histórico ativo...");
+    // <<< MODIFICADO: Adicionado p.held_item ao SELECT >>>
     const query = `
         SELECT
             h.id,
             h.trainer_id,
             t.name AS trainer_name,
             h.date,
-            p.name AS pokemon_name,
+            p.name AS pokemon_name, p.held_item, -- <<< Incluído held_item
             c.name AS clan_name,
             h.comment
         FROM history h
@@ -463,9 +467,11 @@ app.get('/history/active', (req, res) => {
                     comment: entry.comment || null
                 };
             }
+            // Adiciona objeto com nome, clã E item
             groupedHistory[key].pokemons.push({
                 name: entry.pokemon_name,
-                clan: entry.clan_name || 'unknown'
+                clan: entry.clan_name || 'unknown',
+                held_item: entry.held_item // <<< Adicionado item aqui
             });
         });
         const result = Object.values(groupedHistory);
@@ -483,7 +489,7 @@ app.put('/history/:id/return', async (req, res) => {
     console.log(`[PUT /history/:id/return] Devolução individual para ID ${id}.`);
 
     try {
-        await validateTrainerPassword(trainer_password); // Valida a senha antes de prosseguir
+        await validateTrainerPassword(trainer_password);
 
         db.get('SELECT pokemon FROM history WHERE id = ? AND returned = 0', [id], (err, historyEntry) => {
             if (err) throw new Error(`Erro DB ao buscar histórico ${id}: ${err.message}`);
@@ -494,11 +500,15 @@ app.put('/history/:id/return', async (req, res) => {
                 db.run('BEGIN TRANSACTION');
                 db.run('UPDATE pokemon SET status = "available" WHERE id = ?', [pokemonId], function(updateErr) {
                     if (updateErr) throw new Error(`Erro ao atualizar status do Pokémon ${pokemonId}: ${updateErr.message}`);
+                     if (this.changes === 0) console.warn(`[PUT /history/:id/return] Status do Pokémon ${pokemonId} não alterado (já 'available'?).`); // Não lança erro, apenas avisa
+
                     db.run('UPDATE history SET returned = 1, returnDate = ? WHERE id = ?', [returnDateISO, id], function(historyErr) {
                         if (historyErr) throw new Error(`Erro ao atualizar histórico ${id}: ${historyErr.message}`);
                         if (this.changes === 0) throw new Error('Registro de histórico não pôde ser atualizado (concorrência?).');
+
                         db.run('COMMIT', (commitErr) => {
                             if (commitErr) throw new Error(`Erro ao commitar devolução: ${commitErr.message}`);
+                            console.log(`[PUT /history/:id/return] Devolução do ID ${id} (Pokemon ${pokemonId}) commitada.`);
                             res.status(200).json({ message: 'Pokémon devolvido com sucesso!' });
                         });
                     });
@@ -507,7 +517,14 @@ app.put('/history/:id/return', async (req, res) => {
         });
     } catch (error) {
         console.error(`[PUT /history/:id/return] Erro: ${error.message}`);
-        if (db.inTransaction) db.run('ROLLBACK');
+        // Tenta rollback se possível (db.inTransaction não é padrão no sqlite3 node)
+        db.get('PRAGMA query_only', (errPragma, result) => {
+             if (!result || !result.query_only) { // Heurística: Se não estiver em query_only, pode estar em TX
+                 db.run('ROLLBACK', (rollbackErr) => {
+                     if (rollbackErr) console.error("Erro adicional ao tentar ROLLBACK:", rollbackErr.message);
+                 });
+             }
+        });
         res.status(error.status || 500).json({ error: error.message });
     }
 });
@@ -521,36 +538,50 @@ app.put('/history/return-multiple', async (req, res) => {
     console.log(`[PUT /history/return-multiple] Devolução múltipla para IDs: ${historyEntryIds.join(', ')}`);
 
     try {
-        const trainer = await validateTrainerPassword(trainer_password); // Valida a senha e pega ID
+        const trainer = await validateTrainerPassword(trainer_password);
         const trainerId = trainer.id;
         console.log(`[PUT /history/return-multiple] Senha validada para treinador ID: ${trainerId}`);
 
         const placeholders = historyEntryIds.map(() => '?').join(',');
+        // Pega os IDs dos pokemons a serem devolvidos E verifica se pertencem ao treinador e estão pendentes
         const pokemonIdsToReturn = await new Promise((resolve, reject) => {
             const query = `SELECT DISTINCT pokemon FROM history WHERE id IN (${placeholders}) AND returned = 0 AND trainer_id = ?`;
             db.all(query, [...historyEntryIds, trainerId], (err, rows) => {
                  if (err) return reject({ status: 500, message: 'Erro DB ao buscar Pokémons para devolver.' });
-                 if (!rows || rows.length === 0) return reject({ status: 400, message: 'Nenhum registro válido ou pendente encontrado para os IDs e treinador fornecidos.'});
-                 resolve(rows.map(r => r.pokemon));
+                 // Modificado: Não rejeita se rows for vazio, apenas retorna array vazio. A validação de changes fará o trabalho.
+                 resolve(rows ? rows.map(r => r.pokemon) : []);
             });
         });
-         console.log(`[PUT /history/return-multiple] IDs de Pokémon a ter status atualizado: ${pokemonIdsToReturn.join(', ')}`);
+
+        if (pokemonIdsToReturn.length === 0) {
+             console.warn(`[PUT /history/return-multiple] Nenhum Pokémon válido encontrado para devolver para os IDs ${historyEntryIds.join(', ')} e treinador ${trainerId}.`);
+             return res.status(400).json({ error: 'Nenhum registro válido ou pendente encontrado para os IDs e treinador fornecidos.'});
+        }
+        console.log(`[PUT /history/return-multiple] IDs de Pokémon a ter status atualizado: ${pokemonIdsToReturn.join(', ')}`);
 
         db.serialize(() => {
             db.run('BEGIN TRANSACTION');
             try {
+                // Atualiza status dos Pokémons
                 const pokemonPlaceholders = pokemonIdsToReturn.map(() => '?').join(',');
                 db.run(`UPDATE pokemon SET status = 'available' WHERE id IN (${pokemonPlaceholders})`, pokemonIdsToReturn, function(pokeErr){
                     if(pokeErr) throw new Error(`Erro ao atualizar status dos Pokémons: ${pokeErr.message}`);
                     console.log(`[PUT /history/return-multiple] Status de ${this.changes} Pokémons atualizado para 'available'.`);
+                    // Não lançar erro se this.changes for 0, pode ser que já estavam available
+                    if (this.changes !== pokemonIdsToReturn.length) {
+                         console.warn(`[PUT /history/return-multiple] Nem todos os status de pokémon foram alterados (${this.changes} de ${pokemonIdsToReturn.length}). Provavelmente já estavam 'available'.`);
+                    }
                 });
 
+                // Atualiza entradas do histórico
                 const historyPlaceholders = historyEntryIds.map(() => '?').join(',');
                 db.run(`UPDATE history SET returned = 1, returnDate = ? WHERE id IN (${historyPlaceholders}) AND returned = 0 AND trainer_id = ?`,
                       [returnDateISO, ...historyEntryIds, trainerId], function(histErr){
                      if(histErr) throw new Error(`Erro ao atualizar histórico: ${histErr.message}`);
-                     if(this.changes === 0) throw new Error('Nenhuma entrada de histórico pôde ser marcada como devolvida (concorrência?).');
+                     // Validação crucial: se 0 linhas atualizadas no histórico, algo deu errado (ids não pertenciam ao treinador ou já devolvidos?)
+                     if(this.changes === 0) throw new Error('Nenhuma entrada de histórico válida foi encontrada para marcar como devolvida.');
                      console.log(`[PUT /history/return-multiple] ${this.changes} entradas de histórico atualizadas.`);
+
                      db.run('COMMIT', (commitErr) => {
                          if(commitErr) throw new Error(`Erro ao commitar devolução múltipla: ${commitErr.message}`);
                          console.log(`[PUT /history/return-multiple] Devolução múltipla commitada.`);
@@ -579,24 +610,26 @@ app.delete('/history/:id', (req, res) => {
             return res.status(500).json({ error: 'Erro ao deletar registro.' });
         }
         if (this.changes === 0) return res.status(404).json({ error: 'Registro não encontrado.' });
+        console.log(`[DELETE /history/:id] Registro ${id} deletado.`);
         res.status(200).json({ message: 'Registro de histórico deletado com sucesso!' });
     });
 });
 
 app.delete('/history', (req, res) => {
     // Idealmente, validar senha admin aqui
+    console.warn("[DELETE /history] Recebida requisição para DELETAR TODO O HISTÓRICO.");
     db.run('DELETE FROM history', [], function(err) {
         if (err) {
             console.error('Erro ao deletar todo o histórico:', err.message);
             return res.status(500).json({ error: 'Erro ao deletar histórico completo.' });
         }
+        console.log(`[DELETE /history] Histórico completo deletado (${this.changes} registros)!`);
         res.status(200).json({ message: `Histórico completo deletado (${this.changes} registros)!` });
     });
 });
 
 
 // --- Endpoints de Listas Favoritas ---
-// (Sem alterações nos existentes, já lidam com senha corretamente)
 app.get('/favorite-lists', (req, res) => {
     console.log("[GET /favorite-lists] Buscando todas as listas favoritas...");
     const query = `
@@ -632,30 +665,42 @@ app.post('/favorite-lists', async (req, res) => {
 
         db.serialize(() => {
             db.run('BEGIN TRANSACTION');
-            db.run('INSERT INTO favorite_lists (id, name, trainer_id) VALUES (?, ?, ?)', [listId, listName, trainerId], function(err) {
-                if (err) {
-                    db.run('ROLLBACK');
-                    const statusCode = err.message.includes('UNIQUE constraint failed') ? 409 : 500;
-                    const message = statusCode === 409 ? `Você já possui uma lista com o nome '${listName}'.` : 'Erro ao salvar a lista.';
-                    return res.status(statusCode).json({ error: message });
+            // Verifica se o treinador já tem uma lista com esse nome
+            db.get('SELECT id FROM favorite_lists WHERE name = ? AND trainer_id = ?', [listName, trainerId], (checkErr, existingList) => {
+                if (checkErr) {
+                    db.run('ROLLBACK'); return res.status(500).json({ error: 'Erro ao verificar nome da lista.' });
                 }
-                const stmt = db.prepare('INSERT INTO favorite_list_pokemons (id, list_id, pokemon_id) VALUES (?, ?, ?)');
-                let insertErrors = false;
-                pokemonIds.forEach(pokemonId => {
-                    if (insertErrors) return;
-                    stmt.run(uuidv4(), listId, pokemonId, function(itemErr) { if (itemErr) insertErrors = true; });
-                });
-                stmt.finalize((finalizeErr) => {
-                     if (finalizeErr || insertErrors) {
-                         db.run('ROLLBACK');
-                         const errorMsg = 'Erro ao adicionar Pokémons à lista (verifique IDs).';
-                         return res.status(400).json({ error: errorMsg });
-                     } else {
-                         db.run('COMMIT', (commitErr) => {
-                             if (commitErr) { db.run('ROLLBACK'); return res.status(500).json({ error: 'Erro ao finalizar criação da lista.' }); }
-                             res.status(201).json({ message: `Lista '${listName}' criada com sucesso por ${trainerName}!`, listId: listId });
-                         });
-                     }
+                if (existingList) {
+                    db.run('ROLLBACK'); return res.status(409).json({ error: `Você já possui uma lista com o nome '${listName}'.` });
+                }
+
+                // Insere a nova lista
+                db.run('INSERT INTO favorite_lists (id, name, trainer_id) VALUES (?, ?, ?)', [listId, listName, trainerId], function(err) {
+                    if (err) {
+                        db.run('ROLLBACK');
+                        return res.status(500).json({ error: 'Erro ao salvar a lista.' });
+                    }
+                    // Insere os Pokémons associados
+                    const stmt = db.prepare('INSERT INTO favorite_list_pokemons (id, list_id, pokemon_id) VALUES (?, ?, ?)');
+                    let insertErrors = false;
+                    pokemonIds.forEach(pokemonId => {
+                        if (insertErrors) return;
+                        stmt.run(uuidv4(), listId, pokemonId, function(itemErr) { if (itemErr) insertErrors = true; });
+                    });
+                    stmt.finalize((finalizeErr) => {
+                         if (finalizeErr || insertErrors) {
+                             db.run('ROLLBACK');
+                             const errorMsg = 'Erro ao adicionar Pokémons à lista (verifique IDs).';
+                             console.error(`[POST /favorite-lists] Erro ao inserir pokemons para lista ${listId}:`, finalizeErr || 'Erro em stmt.run');
+                             return res.status(400).json({ error: errorMsg });
+                         } else {
+                             db.run('COMMIT', (commitErr) => {
+                                 if (commitErr) { db.run('ROLLBACK'); return res.status(500).json({ error: 'Erro ao finalizar criação da lista.' }); }
+                                 console.log(`[POST /favorite-lists] Lista '${listName}' (ID: ${listId}) criada por ${trainerName}.`);
+                                 res.status(201).json({ message: `Lista '${listName}' criada com sucesso por ${trainerName}!`, listId: listId });
+                             });
+                         }
+                    });
                 });
             });
         });
@@ -681,6 +726,7 @@ app.get('/favorite-lists/:listId', (req, res) => {
 
         db.all(pokemonsQuery, [listId], (pokemonsErr, pokemonRows) => {
             if (pokemonsErr) return res.status(500).json({ error: 'Erro ao buscar Pokémons da lista.' });
+            console.log(`[GET /favorite-lists/:listId] Retornando detalhes da lista ${listId} com ${pokemonRows.length} pokemons.`);
             res.status(200).json({
                 id: listRow.id,
                 name: listRow.name,
@@ -716,45 +762,71 @@ app.put('/favorite-lists/:listId', async (req, res) => {
             return res.status(403).json({ error: 'Você não tem permissão para editar esta lista.' });
         }
         console.log(`[PUT /favorite-lists/:listId] Treinador ID ${trainerId} autorizado a editar lista ${listId}.`);
+        const newNameTrimmed = name ? name.trim() : null;
 
         db.serialize(() => {
             db.run('BEGIN TRANSACTION');
             let operations = [];
-            if (name) {
+
+            // 1. Verificar nome duplicado (se o nome foi fornecido)
+            if (newNameTrimmed) {
                 operations.push(new Promise((resolve, reject) => {
-                    db.get('SELECT id FROM favorite_lists WHERE name = ? AND trainer_id = ? AND id != ?', [name.trim(), trainerId, listId], (checkErr, existing) => {
+                    db.get('SELECT id FROM favorite_lists WHERE name = ? AND trainer_id = ? AND id != ?', [newNameTrimmed, trainerId, listId], (checkErr, existing) => {
                          if (checkErr) return reject({ status: 500, message: 'Erro ao verificar nome duplicado.' });
-                         if (existing) return reject({ status: 409, message: `Você já possui outra lista com o nome '${name.trim()}'.` });
-                         db.run('UPDATE favorite_lists SET name = ? WHERE id = ?', [name.trim(), listId], function(err) {
-                             if (err) reject({ status: 500, message: 'Erro ao atualizar nome da lista.' });
-                             else resolve();
-                         });
+                         if (existing) return reject({ status: 409, message: `Você já possui outra lista com o nome '${newNameTrimmed}'.` });
+                         resolve(); // Nome ok ou não foi alterado
                     });
-                }));
+                 }));
             }
+             // 2. Atualizar nome (se fornecido)
+             if (newNameTrimmed) {
+                 operations.push(new Promise((resolve, reject) => {
+                      db.run('UPDATE favorite_lists SET name = ? WHERE id = ?', [newNameTrimmed, listId], function(err) {
+                          if (err) reject({ status: 500, message: 'Erro ao atualizar nome da lista.' });
+                          else resolve();
+                      });
+                  }));
+             }
+
+            // 3. Atualizar Pokémons (se fornecido)
             if (pokemonIds) {
+                 // 3a. Deletar associações antigas
                 operations.push(new Promise((resolve, reject) => {
                      db.run('DELETE FROM favorite_list_pokemons WHERE list_id = ?', [listId], err => err ? reject({ status: 500, message: 'Erro ao limpar pokémons antigos.' }) : resolve());
                 }));
+                 // 3b. Inserir novas associações (se houver)
                 if (pokemonIds.length > 0) {
                      operations.push(new Promise((resolve, reject) => {
                          const stmt = db.prepare('INSERT INTO favorite_list_pokemons (id, list_id, pokemon_id) VALUES (?, ?, ?)');
                          let itemErrors = false;
+                         // Validação extra: Verificar se os IDs de Pokémon existem? (Opcional, Foreign Key pode pegar)
                          pokemonIds.forEach(pId => { if(itemErrors) return; stmt.run(uuidv4(), listId, pId, e => { if(e) itemErrors = true; }); });
                          stmt.finalize(e => e || itemErrors ? reject({ status: 400, message: 'Erro ao adicionar Pokémons (verifique IDs).' }) : resolve());
                      }));
                 }
             }
+
+            // Executa todas as operações em paralelo dentro da transação
             Promise.all(operations)
                 .then(() => {
-                    db.run('COMMIT', e => e ? res.status(500).json({ error: 'Erro ao finalizar atualização.' }) : res.status(200).json({ message: 'Lista atualizada com sucesso!' }));
+                    db.run('COMMIT', e => {
+                         if (e) {
+                              console.error(`[PUT /favorite-lists/:listId] Erro ao commitar:`, e.message);
+                              res.status(500).json({ error: 'Erro ao finalizar atualização.' })
+                         } else {
+                              console.log(`[PUT /favorite-lists/:listId] Lista ${listId} atualizada com sucesso.`);
+                              res.status(200).json({ message: 'Lista atualizada com sucesso!' });
+                         }
+                     });
                 })
                 .catch(error => {
+                     console.error(`[PUT /favorite-lists/:listId] Erro na transação: ${error.message}`);
                      db.run('ROLLBACK');
                      res.status(error.status || 500).json({ error: error.message });
                 });
         });
     } catch (error) {
+        console.error(`[PUT /favorite-lists/:listId] Erro pré-transação: ${error.message}`);
         res.status(error.status || 500).json({ error: error.message });
     }
 });
@@ -802,13 +874,27 @@ app.delete('/favorite-lists/:listId', async (req, res) => {
             return res.status(403).json({ error: 'Senha inválida ou permissão negada para deletar esta lista.' });
         }
 
-        db.run('DELETE FROM favorite_lists WHERE id = ?', [listId], function(err) {
-            if (err) {
-                console.error(`[DELETE /favorite-lists/:listId] Erro DB ao deletar lista ${listId}:`, err.message);
-                return res.status(500).json({ error: 'Erro ao deletar lista favorita.' });
-            }
-            console.log(`[DELETE /favorite-lists/:listId] Lista '${listName}' (ID: ${listId}) deletada com sucesso por ${deletedBy}.`);
-            res.status(200).json({ message: `Lista '${listName}' deletada com sucesso!` });
+        // Deleta primeiro as associações, depois a lista
+        db.serialize(() => {
+             db.run('DELETE FROM favorite_list_pokemons WHERE list_id = ?', [listId], function(errAssoc) {
+                  if(errAssoc) {
+                      console.error(`[DELETE /favorite-lists/:listId] Erro DB ao deletar associações da lista ${listId}:`, errAssoc.message);
+                       return res.status(500).json({ error: 'Erro ao limpar pokémons da lista antes de deletar.' });
+                  }
+                   console.log(`[DELETE /favorite-lists/:listId] Associações da lista ${listId} removidas (${this.changes} linhas).`);
+                   db.run('DELETE FROM favorite_lists WHERE id = ?', [listId], function(errList) {
+                       if (errList) {
+                           console.error(`[DELETE /favorite-lists/:listId] Erro DB ao deletar lista ${listId}:`, errList.message);
+                           return res.status(500).json({ error: 'Erro ao deletar lista favorita.' });
+                       }
+                       if (this.changes === 0) {
+                            console.warn(`[DELETE /favorite-lists/:listId] Nenhuma lista encontrada para deletar com ID ${listId} (pode já ter sido deletada).`);
+                            // Ainda retorna sucesso se as associações foram removidas? Ou 404? Vamos retornar 200.
+                       }
+                       console.log(`[DELETE /favorite-lists/:listId] Lista '${listName}' (ID: ${listId}) deletada com sucesso por ${deletedBy}.`);
+                       res.status(200).json({ message: `Lista '${listName}' deletada com sucesso!` });
+                   });
+             });
         });
 
     } catch (error) {
@@ -825,7 +911,7 @@ app.post('/favorite-lists/:listId/borrow', async (req, res) => {
 
     console.log(`[POST /favorite-lists/:listId/borrow] Tentativa de empréstimo da lista ${listId}.`);
     try {
-        const trainer = await validateTrainerPassword(trainer_password); // Valida quem está pegando
+        const trainer = await validateTrainerPassword(trainer_password);
         const trainerId = trainer.id;
         const trainerName = trainer.name;
         console.log(`[POST /favorite-lists/:listId/borrow] Treinador '${trainerName}' (ID: ${trainerId}) validado.`);
@@ -845,54 +931,69 @@ app.post('/favorite-lists/:listId/borrow', async (req, res) => {
                  if (beginErr) return res.status(500).json({ error: 'Erro interno ao iniciar empréstimo.' });
                  try {
                     const placeholders = pokemonIdsInList.map(() => '?').join(',');
+                    // Pega detalhes dos pokémons da lista
                     const pokemonDetails = await new Promise((resolve, reject) => {
                         const query = `SELECT id, name, status FROM pokemon WHERE id IN (${placeholders})`;
                         db.all(query, pokemonIdsInList, (err, rows) => {
                             if (err) return reject(new Error(`Erro ao verificar status: ${err.message}`));
                             const foundIds = rows.map(r => r.id);
                             const missingIds = pokemonIdsInList.filter(id => !foundIds.includes(id));
-                            if (missingIds.length > 0) console.warn(`[BORROW LIST] Pokémons não encontrados: ${missingIds.join(', ')}`);
-                            if (rows.length === 0) return reject(new Error('Nenhum dos Pokémons desta lista foi encontrado.'));
+                            if (missingIds.length > 0) console.warn(`[BORROW LIST] Pokémons da lista ${listId} não encontrados na tabela pokemon: ${missingIds.join(', ')}`);
+                            if (rows.length === 0) return reject(new Error('Nenhum dos Pokémons desta lista foi encontrado no banco de dados.'));
                             resolve(rows);
                         });
                     });
+
+                    // Filtra os disponíveis
                     const availablePokemons = pokemonDetails.filter(p => p.status === 'available');
                     const unavailablePokemons = pokemonDetails.filter(p => p.status !== 'available');
-                    if (availablePokemons.length === 0) throw new Error('Nenhum Pokémon desta lista está disponível.');
-                    console.log(`[BORROW LIST] Disponíveis: ${availablePokemons.map(p=>p.name).join(', ')}`);
-                    if (unavailablePokemons.length > 0) console.warn(`[BORROW LIST] Indisponíveis: ${unavailablePokemons.map(p=>p.name).join(', ')}`);
 
+                    if (availablePokemons.length === 0) {
+                        // Usa 409 (Conflict) como status code para indicar indisponibilidade
+                        throw { status: 409, message: 'Nenhum Pokémon desta lista está disponível no momento.' };
+                    }
+                    console.log(`[BORROW LIST ${listId}] Disponíveis: ${availablePokemons.map(p=>p.name).join(', ')}`);
+                    if (unavailablePokemons.length > 0) console.warn(`[BORROW LIST ${listId}] Indisponíveis: ${unavailablePokemons.map(p=>p.name).join(', ')}`);
+
+                    // Atualiza status dos disponíveis
                     const availableIds = availablePokemons.map(p => p.id);
                     const updatePlaceholders = availableIds.map(() => '?').join(',');
                     await new Promise((resolve, reject) => {
                         const query = `UPDATE pokemon SET status = 'borrowed' WHERE id IN (${updatePlaceholders}) AND status = 'available'`;
                         db.run(query, availableIds, function (err) {
                              if (err) return reject(new Error(`Erro ao atualizar status: ${err.message}`));
-                             if (this.changes !== availableIds.length) return reject(new Error(`Falha ao reservar (status pode ter mudado).`));
+                             if (this.changes !== availableIds.length) {
+                                 console.error(`[BORROW LIST ${listId}] Falha ao reservar ${availableIds.length} pokemons. Apenas ${this.changes} foram atualizados.`);
+                                 return reject(new Error(`Falha ao reservar ${availableIds.length} Pokémon(s) (status pode ter mudado).`));
+                             }
                              resolve();
                          });
                      });
+
+                     // Insere no histórico
                     const stmt = db.prepare('INSERT INTO history (pokemon, pokemon_name, trainer_id, date, comment) VALUES (?, ?, ?, ?, ?)');
                     let historyErrors = false;
                     availablePokemons.forEach(p => { if(historyErrors) return; stmt.run(p.id, p.name, trainerId, dateISO, comment || null, e => { if(e) historyErrors = true; }); });
                     await new Promise((resolve, reject) => { stmt.finalize(e => e || historyErrors ? reject(new Error(`Erro ao registrar histórico.`)) : resolve()); });
 
+                    // Commita
                     db.run('COMMIT', (commitErr) => {
                         if (commitErr) throw new Error(`Erro ao commitar: ${commitErr.message}`);
                         let message = `${availablePokemons.length} Pokémon(s) emprestado(s) para ${trainerName}!`;
                         if(unavailablePokemons.length > 0) message += ` (${unavailablePokemons.map(p=>p.name).join(', ')} indisponíveis).`;
+                        console.log(`[BORROW LIST ${listId}] Empréstimo commitado.`);
                         res.status(201).json({ message: message, borrowedCount: availablePokemons.length });
                     });
                  } catch (error) {
-                     console.error(`[BORROW LIST] Erro DENTRO da TX: ${error.message}`);
+                     console.error(`[BORROW LIST ${listId}] Erro DENTRO da TX: ${error.message}`);
                      db.run('ROLLBACK');
-                     const statusCode = error.message.includes('disponível') || error.message.includes('encontrado') || error.message.includes('reservar') ? 409 : 500;
+                     const statusCode = error.status || (error.message.includes('disponível') || error.message.includes('encontrado') || error.message.includes('reservar') ? 409 : 500);
                      res.status(statusCode).json({ error: error.message });
                  }
             });
         });
     } catch (error) {
-        console.error(`[BORROW LIST] Erro PRÉ-TX: ${error.message}`);
+        console.error(`[BORROW LIST ${listId}] Erro PRÉ-TX: ${error.message}`);
         res.status(error.status || 500).json({ error: error.message });
     }
 });
